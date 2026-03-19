@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: cyberhub-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cyberhub
+      POSTGRES_USER: cyberhub
+      POSTGRES_PASSWORD: cyberhub
+    ports:
+      -"5432:5432"
+    volumes:
+      -postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cyberhub -d cyberhub"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  
+  redis:
+    image: redis:7
+    container_name: cyberhub-redis
+    restart: unless-stopped
+    ports:
+      -"6379:6379"
+    volumes:
+      -redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cyberhub_backend
+    restart: unless-stopped
+    env_file:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    profiles:
+      - app
+
+volumes:
+  postgres_data:
+  redis_data:
