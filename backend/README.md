@@ -13,5 +13,9 @@ docker compose ps
 docker compose down
 
 http://localhost:8000/health
-
+http://localhost:8000/health/db
 http://localhost:8000/docs
+
+docker stop cyberhub_backend
+docker rm cyberhub_backend
+docker compose down --remove-orphans
