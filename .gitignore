@@ -6,3 +6,4 @@ __pycache__/
 backend/image.png
 .pytest_cache/
 .ruff_cache
+.codex

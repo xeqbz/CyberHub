@@ -18,7 +18,7 @@ from app.modules.users.service import (
     UserService,
 )
 
-router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def get_user_service(db: Session) -> UserService:

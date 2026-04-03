@@ -25,7 +25,7 @@ from app.modules.teams.service import (
 )
 from app.modules.users.model import User
 
-router = APIRouter(prefix="/api/v1/teams", tags=["teams"])
+router = APIRouter(prefix="/teams", tags=["teams"])
 
 
 class TeamMemberCreateRequest(BaseModel):
