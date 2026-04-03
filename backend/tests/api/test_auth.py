@@ -70,7 +70,8 @@ def test_login_with_invalid_credentials_returns_401(client):
     client.post("/api/v1/auth/register", json=register_payload)
 
     response = client.post(
-        "/api/v1/auth/login", json={"email": "test@example.com", "password": "wrongpassword"}
+        "/api/v1/auth/login",
+        json={"email": "test@example.com", "password": "wrongpassword"},
     )
 
     assert response.status_code == 401
