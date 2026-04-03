@@ -41,7 +41,10 @@ class Settings(BaseSettings):
     celery_broker_url: str | None = None
     celery_result_backend: str | None = None
 
-    backend_cors_origins: list[str] = ["https://localhost:3000"]
+    backend_cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
     ws_heartbeat_interval: int = 30
 
     log_level: str = "INFO"
