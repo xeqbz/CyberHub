@@ -6,6 +6,7 @@ from sqlalchemy import engine_from_config, pool
 import app.modules.users
 import app.modules.teams
 import app.modules.tournaments
+import app.modules.matches
 from app.core.config import settings
 from app.db.base import Base
 
