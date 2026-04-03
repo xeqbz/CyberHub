@@ -1,4 +1,6 @@
-def register_user(client, username: str, email: str, password: str = "strongpass123") -> dict:
+def register_user(
+    client, username: str, email: str, password: str = "strongpass123"
+) -> dict:
     response = client.post(
         "/auth/register",
         json={
@@ -49,7 +51,9 @@ def create_tournament(
     return response.json()
 
 
-def register_team_to_tournament(client, access_token: str, tournament_id: int, team_id: int) -> dict:
+def register_team_to_tournament(
+    client, access_token: str, tournament_id: int, team_id: int
+) -> dict:
     response = client.post(
         f"/tournaments/{tournament_id}/participants",
         json={"team_id": team_id},
@@ -156,7 +160,9 @@ def test_create_match_returns_created_match(client):
 
 
 def test_non_owner_cannot_create_match(client):
-    owner, second_owner, tournament, home_team, away_team = prepare_match_context(client)
+    owner, second_owner, tournament, home_team, away_team = prepare_match_context(
+        client
+    )
 
     response = client.post(
         "/matches",
@@ -285,7 +291,9 @@ def test_invalid_winner_for_score_returns_409(client):
     )
 
     assert response.status_code == 409
-    assert response.json()["detail"] == "winner_team_id does not match the provided score"
+    assert (
+        response.json()["detail"] == "winner_team_id does not match the provided score"
+    )
 
 
 def test_list_tournament_matches_returns_created_match(client):

@@ -1,4 +1,6 @@
-def register_user(client, username: str, email: str, password: str = "strongpass123") -> dict:
+def register_user(
+    client, username: str, email: str, password: str = "strongpass123"
+) -> dict:
     response = client.post(
         "/auth/register",
         json={

@@ -18,11 +18,11 @@ class TeamRepository:
             )
         )
         return self.db.scalar(stmt)
-    
+
     def get_by_name(self, name: str) -> Team | None:
         stmt = select(Team).where(Team.name == name)
         return self.db.scalar(stmt)
-    
+
     def list_teams(self, offset: int = 0, limit: int = 100) -> list[Team]:
         stmt = (
             select(Team)
@@ -32,7 +32,7 @@ class TeamRepository:
             .order_by(Team.id)
         )
         return list(self.db.scalars(stmt).unique().all())
-    
+
     def list_by_owner(self, owner_id: int) -> list[Team]:
         stmt = (
             select(Team)
@@ -44,7 +44,7 @@ class TeamRepository:
             .order_by(Team.id)
         )
         return list(self.db.scalars(stmt).unique().all())
-    
+
     def list_by_member(self, user_id: int) -> list[Team]:
         stmt = (
             select(Team)
@@ -57,7 +57,7 @@ class TeamRepository:
             .order_by(Team.id)
         )
         return list(self.db.scalars(stmt).unique().all())
-    
+
     def create(
         self,
         *,
@@ -74,7 +74,7 @@ class TeamRepository:
         self.db.commit()
         self.db.refresh(team)
         return team
-    
+
     def update(
         self,
         team: Team,
@@ -86,12 +86,12 @@ class TeamRepository:
             team.name = name
         if description is not None:
             team.description = description
-        
+
         self.db.add(team)
         self.db.commit()
         self.db.refresh(team)
         return team
-    
+
     def delete(self, team: Team) -> None:
         self.db.delete(team)
         self.db.commit()

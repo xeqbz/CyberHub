@@ -14,7 +14,9 @@ class TournamentRepository:
             .where(Tournament.id == tournament_id)
             .options(
                 joinedload(Tournament.owner),
-                selectinload(Tournament.participants).joinedload(TournamentParticipant.team),
+                selectinload(Tournament.participants).joinedload(
+                    TournamentParticipant.team
+                ),
             )
         )
         return self.db.scalar(stmt)
@@ -39,7 +41,9 @@ class TournamentRepository:
             .where(Tournament.owner_id == owner_id)
             .options(
                 joinedload(Tournament.owner),
-                selectinload(Tournament.participants).joinedload(TournamentParticipant.team),
+                selectinload(Tournament.participants).joinedload(
+                    TournamentParticipant.team
+                ),
             )
             .order_by(Tournament.id)
         )
@@ -98,7 +102,9 @@ class TournamentRepository:
         self.db.delete(tournament)
         self.db.commit()
 
-    def get_participant(self, tournament_id: int, team_id: int) -> TournamentParticipant | None:
+    def get_participant(
+        self, tournament_id: int, team_id: int
+    ) -> TournamentParticipant | None:
         stmt = (
             select(TournamentParticipant)
             .where(

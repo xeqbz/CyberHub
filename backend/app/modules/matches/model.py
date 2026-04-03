@@ -1,7 +1,8 @@
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import CheckConstraint, DateTime, Enum as SqlEnum, ForeignKey, Integer
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer
+from sqlalchemy import Enum as SqlEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import BaseModel
@@ -19,7 +20,9 @@ class MatchStatus(str, Enum):
 class Match(BaseModel):
     __tablename__ = "matches"
     __table_args__ = (
-        CheckConstraint("home_team_id <> away_team_id", name="ck_matches_different_teams"),
+        CheckConstraint(
+            "home_team_id <> away_team_id", name="ck_matches_different_teams"
+        ),
     )
 
     tournament_id: Mapped[int] = mapped_column(

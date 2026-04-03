@@ -41,19 +41,19 @@ class TeamService:
 
     def get_team_by_id(self, team_id: int) -> Team | None:
         return self.repository.get_by_id(team_id)
-    
+
     def get_team_or_raise(self, team_id: int) -> Team:
         team = self.repository.get_by_id(team_id)
         if team is None:
-            raise TeamNotFoundError(f"Team not found")
+            raise TeamNotFoundError("Team not found")
         return team
-    
+
     def get_team_by_name(self, name: str) -> Team | None:
         return self.repository.get_by_name(name.strip())
-    
+
     def list_teams(self, offset: int = 0, limit: int = 100) -> list[Team]:
         return self.repository.list_teams(offset=offset, limit=limit)
-    
+
     def list_user_teams(self, user_id: int) -> list[Team]:
         teams = self.repository.list_by_member(user_id)
 
@@ -66,14 +66,14 @@ class TeamService:
                 unique_teams.append(team)
 
         return unique_teams
-    
+
     def create_team(self, data: TeamCreate, owner_id: int) -> Team:
         normalized_name = data.name.strip()
 
         existing_team = self.repository.get_by_name(normalized_name)
         if existing_team is not None:
             raise TeamAlreadyExistsError("Team with this name already exists")
-        
+
         team = self.repository.create(
             name=normalized_name,
             description=data.description,
@@ -87,7 +87,7 @@ class TeamService:
         )
 
         return self.get_team_or_raise(team.id)
-    
+
     def update_team(
         self,
         team_id: int,

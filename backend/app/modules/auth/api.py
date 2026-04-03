@@ -10,13 +10,13 @@ from app.modules.auth.security import (
     hash_password,
     verify_password,
 )
+from app.modules.users.repository import UserRepository
 from app.modules.users.schemas import UserCreate, UserLogin
 from app.modules.users.service import (
     EmailAlreadyExistsError,
-    UserService,
     UsernameAlreadyExistsError,
+    UserService,
 )
-from app.modules.users.repository import UserRepository
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

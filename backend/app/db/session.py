@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
 
-
 engine = create_engine(
     settings.sqlalchemy_database_url,
     pool_pre_ping=True,
@@ -21,11 +20,11 @@ SessionLocal = sessionmaker(
 
 
 def get_db() -> Generator[Session, None, None]:
-    db =SessionLocal()
+    db = SessionLocal()
     try:
         yield db
     finally:
-        db.close
+        db.close()
 
 
 def check_db_connection() -> bool:

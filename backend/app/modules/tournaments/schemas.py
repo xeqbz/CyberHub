@@ -2,9 +2,9 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.modules.teams.schemas import TeamListItem
 from app.modules.tournaments.model import TournamentStatus
 from app.modules.users.schemas import UserRead
-from app.modules.teams.schemas import TeamListItem
 
 
 class TournamentBase(BaseModel):

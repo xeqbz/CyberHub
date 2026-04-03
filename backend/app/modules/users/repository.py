@@ -11,24 +11,24 @@ class UserRepository:
     def get_by_id(self, user_id: int) -> User | None:
         stmt = select(User).where(User.id == user_id)
         return self.db.scalar(stmt)
-    
+
     def get_by_email(self, email: str) -> User | None:
         stmt = select(User).where(User.email == email)
         return self.db.scalar(stmt)
-    
+
     def get_by_username(self, username: str) -> User | None:
         stmt = select(User).where(User.username == username)
         return self.db.scalar(stmt)
-    
+
     def list_users(self, offset: int = 0, limit: int = 100) -> list[User]:
         stmt = select(User).offset(offset).limit(limit)
         return list(self.db.scalars(stmt).all())
-    
+
     def create(
         self,
         *,
         username: str,
-        email: str, 
+        email: str,
         hashed_password: str,
         is_active: bool = True,
     ) -> User:

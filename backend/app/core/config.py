@@ -3,6 +3,7 @@ from functools import lru_cache
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
     """Application settings."""
 
@@ -12,7 +13,7 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
-    
+
     app_name: str = "CyberHub backend"
     app_env: str = "development"
     debug: bool = True
@@ -51,7 +52,7 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
-    
+
     @property
     def sqlalchemy_database_url(self) -> str:
         if self.database_url:
@@ -60,7 +61,7 @@ class Settings(BaseSettings):
             f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
-    
+
     @property
     def redis_dsn(self) -> str:
         if self.redis_url:
@@ -80,9 +81,10 @@ class Settings(BaseSettings):
         return f"redis://{self.redis_host}:{self.redis_port}/1"
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     """Get application settings."""
     return Settings()
 
-settings = get_settings()    
+
+settings = get_settings()

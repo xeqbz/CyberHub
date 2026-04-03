@@ -1,4 +1,6 @@
-def register_user(client, username: str, email: str, password: str = "strongpass123") -> dict:
+def register_user(
+    client, username: str, email: str, password: str = "strongpass123"
+) -> dict:
     response = client.post(
         "/auth/register",
         json={
@@ -121,7 +123,9 @@ def test_create_tournament_with_duplicate_name_returns_409(client):
 
     assert first_response.status_code == 201
     assert second_response.status_code == 409
-    assert second_response.json()["detail"] == "Tournament with this name already exists"
+    assert (
+        second_response.json()["detail"] == "Tournament with this name already exists"
+    )
 
 
 def test_list_tournaments_returns_created_tournaments(client):
@@ -254,7 +258,10 @@ def test_cannot_add_same_team_twice_to_tournament(client):
 
     assert first_response.status_code == 201
     assert second_response.status_code == 409
-    assert second_response.json()["detail"] == "Team is already registered in this tournament"
+    assert (
+        second_response.json()["detail"]
+        == "Team is already registered in this tournament"
+    )
 
 
 def test_can_remove_participant(client):

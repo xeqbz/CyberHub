@@ -77,8 +77,12 @@ class MatchService:
 
         self._validate_teams_exist(data.home_team_id, data.away_team_id)
         self._validate_teams_are_different(data.home_team_id, data.away_team_id)
-        self._validate_team_registered_in_tournament(data.tournament_id, data.home_team_id)
-        self._validate_team_registered_in_tournament(data.tournament_id, data.away_team_id)
+        self._validate_team_registered_in_tournament(
+            data.tournament_id, data.home_team_id
+        )
+        self._validate_team_registered_in_tournament(
+            data.tournament_id, data.away_team_id
+        )
 
         match = self.repository.create(
             tournament_id=data.tournament_id,
@@ -109,9 +113,13 @@ class MatchService:
         home_score = match.home_score if data.home_score is None else data.home_score
         away_score = match.away_score if data.away_score is None else data.away_score
 
-        scores_were_provided = data.home_score is not None or data.away_score is not None
+        scores_were_provided = (
+            data.home_score is not None or data.away_score is not None
+        )
         if (data.home_score is None) != (data.away_score is None):
-            raise MatchInvalidScoreError("Both home_score and away_score must be provided together")
+            raise MatchInvalidScoreError(
+                "Both home_score and away_score must be provided together"
+            )
 
         if scores_were_provided:
             winner_team_id = self._resolve_winner_team_id(
@@ -124,7 +132,9 @@ class MatchService:
             if status is None:
                 status = MatchStatus.COMPLETED
 
-        if status == MatchStatus.COMPLETED and (home_score is None or away_score is None):
+        if status == MatchStatus.COMPLETED and (
+            home_score is None or away_score is None
+        ):
             raise MatchInvalidScoreError("Completed match must have both scores")
 
         updated_match = self.repository.update(
@@ -190,20 +200,30 @@ class MatchService:
     @staticmethod
     def _validate_teams_are_different(home_team_id: int, away_team_id: int) -> None:
         if home_team_id == away_team_id:
-            raise MatchTeamsMustBeDifferentError("home_team_id and away_team_id must be different")
+            raise MatchTeamsMustBeDifferentError(
+                "home_team_id and away_team_id must be different"
+            )
 
-    def _validate_team_registered_in_tournament(self, tournament_id: int, team_id: int) -> None:
+    def _validate_team_registered_in_tournament(
+        self, tournament_id: int, team_id: int
+    ) -> None:
         participant = self.tournament_repository.get_participant(
             tournament_id=tournament_id,
             team_id=team_id,
         )
         if participant is None:
-            raise MatchTeamNotInTournamentError("Team is not registered in this tournament")
+            raise MatchTeamNotInTournamentError(
+                "Team is not registered in this tournament"
+            )
 
     @staticmethod
-    def _ensure_tournament_owner_access(tournament: Tournament, acting_user_id: int) -> None:
+    def _ensure_tournament_owner_access(
+        tournament: Tournament, acting_user_id: int
+    ) -> None:
         if tournament.owner_id != acting_user_id:
-            raise MatchAccessDeniedError("Only tournament owner can perform this action")
+            raise MatchAccessDeniedError(
+                "Only tournament owner can perform this action"
+            )
 
     @staticmethod
     def _resolve_winner_team_id(
@@ -214,8 +234,13 @@ class MatchService:
         away_score: int,
         winner_team_id: int | None,
     ) -> int | None:
-        if winner_team_id is not None and winner_team_id not in {home_team_id, away_team_id}:
-            raise MatchInvalidWinnerError("winner_team_id must match one of the match teams")
+        if winner_team_id is not None and winner_team_id not in {
+            home_team_id,
+            away_team_id,
+        }:
+            raise MatchInvalidWinnerError(
+                "winner_team_id must match one of the match teams"
+            )
 
         if home_score > away_score:
             expected_winner = home_team_id
@@ -228,6 +253,8 @@ class MatchService:
             return expected_winner
 
         if winner_team_id != expected_winner:
-            raise MatchInvalidWinnerError("winner_team_id does not match the provided score")
+            raise MatchInvalidWinnerError(
+                "winner_team_id does not match the provided score"
+            )
 
         return winner_team_id

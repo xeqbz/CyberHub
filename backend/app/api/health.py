@@ -15,6 +15,7 @@ def health() -> dict[str, str]:
     """
     return {"status": "ok"}
 
+
 @router.get("/health/db", status_code=status.HTTP_200_OK)
 def health_db() -> dict[str, str]:
     """

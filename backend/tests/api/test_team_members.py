@@ -1,4 +1,6 @@
-def register_user(client, username: str, email: str, password: str = "strongpass123") -> dict:
+def register_user(
+    client, username: str, email: str, password: str = "strongpass123"
+) -> dict:
     response = client.post(
         "/auth/register",
         json={
@@ -44,7 +46,7 @@ def test_list_team_members_returns_owner(client):
 
 def test_owner_can_add_member(client):
     owner = register_user(client, "vadim", "vadim@example.com")
-    member = register_user(client, "alex", "alex@example.com")
+    register_user(client, "alex", "alex@example.com")
     team = create_team(client, owner["access_token"])
 
     response = client.post(
@@ -67,7 +69,7 @@ def test_owner_can_add_member(client):
 def test_non_owner_cannot_add_member(client):
     owner = register_user(client, "vadim", "vadim@example.com")
     other_user = register_user(client, "alex", "alex@example.com")
-    third_user = register_user(client, "john", "john@example.com")
+    register_user(client, "john", "john@example.com")
     team = create_team(client, owner["access_token"])
 
     response = client.post(
@@ -85,7 +87,7 @@ def test_non_owner_cannot_add_member(client):
 
 def test_cannot_add_same_member_twice(client):
     owner = register_user(client, "vadim", "vadim@example.com")
-    member = register_user(client, "alex", "alex@example.com")
+    register_user(client, "alex", "alex@example.com")
     team = create_team(client, owner["access_token"])
 
     first_response = client.post(
@@ -113,7 +115,7 @@ def test_cannot_add_same_member_twice(client):
 
 def test_owner_can_update_member_role(client):
     owner = register_user(client, "vadim", "vadim@example.com")
-    member = register_user(client, "alex", "alex@example.com")
+    register_user(client, "alex", "alex@example.com")
     team = create_team(client, owner["access_token"])
 
     client.post(
@@ -158,7 +160,7 @@ def test_cannot_change_original_owner_role(client):
 
 def test_owner_can_remove_member(client):
     owner = register_user(client, "vadim", "vadim@example.com")
-    member = register_user(client, "alex", "alex@example.com")
+    register_user(client, "alex", "alex@example.com")
     team = create_team(client, owner["access_token"])
 
     client.post(

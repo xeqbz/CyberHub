@@ -10,7 +10,6 @@ from app.modules.users.model import User, UserRole
 from app.modules.users.repository import UserRepository
 from app.modules.users.service import UserService
 
-
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
@@ -41,11 +40,11 @@ def get_current_user(
             expected_type="access",
         )
         user_id = int(subject)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
-        )
+        ) from exc
 
     service = get_user_service(db)
     user = service.get_user_by_id(user_id)

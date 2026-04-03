@@ -4,10 +4,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-import app.modules.users.model
-import app.modules.teams.model 
-import app.modules.tournaments.model
 import app.modules.matches.model
+import app.modules.teams.model
+import app.modules.tournaments.model
+import app.modules.users.model
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app

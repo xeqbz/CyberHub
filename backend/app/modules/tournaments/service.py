@@ -1,5 +1,9 @@
 from app.modules.teams.repository import TeamRepository
-from app.modules.tournaments.model import Tournament, TournamentParticipant, TournamentStatus
+from app.modules.tournaments.model import (
+    Tournament,
+    TournamentParticipant,
+    TournamentStatus,
+)
 from app.modules.tournaments.repository import TournamentRepository
 from app.modules.tournaments.schemas import TournamentCreate, TournamentUpdate
 
@@ -76,7 +80,9 @@ class TournamentService:
 
         existing_tournament = self.repository.get_by_name(normalized_name)
         if existing_tournament is not None:
-            raise TournamentAlreadyExistsError("Tournament with this name already exists")
+            raise TournamentAlreadyExistsError(
+                "Tournament with this name already exists"
+            )
 
         tournament = self.repository.create(
             name=normalized_name,
@@ -102,8 +108,13 @@ class TournamentService:
 
         if normalized_name is not None and normalized_name != tournament.name:
             existing_tournament = self.repository.get_by_name(normalized_name)
-            if existing_tournament is not None and existing_tournament.id != tournament.id:
-                raise TournamentAlreadyExistsError("Tournament with this name already exists")
+            if (
+                existing_tournament is not None
+                and existing_tournament.id != tournament.id
+            ):
+                raise TournamentAlreadyExistsError(
+                    "Tournament with this name already exists"
+                )
 
         if data.max_teams is not None:
             current_participants = self.repository.count_participants(tournament.id)

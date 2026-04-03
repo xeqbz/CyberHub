@@ -4,7 +4,7 @@ def test_register_returns_token_pair(client):
         json={
             "username": "testuser",
             "email": "test@example.com",
-            "password": "testpassword"
+            "password": "testpassword",
         },
     )
 
@@ -29,7 +29,7 @@ def test_register_duplicate_email_returns_409(client):
         json={
             "username": "another_user",
             "email": "test@example.com",
-            "password": "anotherpassword"
+            "password": "anotherpassword",
         },
     )
 
@@ -49,10 +49,7 @@ def test_login_returns_token_pair_for_valid_credentials(client):
 
     response = client.post(
         "/auth/login",
-        json={
-            "email": "test@example.com",
-            "password": "testpassword"
-        },
+        json={"email": "test@example.com", "password": "testpassword"},
     )
 
     assert response.status_code == 200
@@ -73,11 +70,7 @@ def test_login_with_invalid_credentials_returns_401(client):
     client.post("/auth/register", json=register_payload)
 
     response = client.post(
-        "/auth/login",
-        json={
-            "email": "test@example.com",
-            "password": "wrongpassword"
-        }
+        "/auth/login", json={"email": "test@example.com", "password": "wrongpassword"}
     )
 
     assert response.status_code == 401
@@ -100,9 +93,7 @@ def test_refresh_returns_new_token_pair(client):
 
     response = client.post(
         "/auth/refresh",
-        json={
-            "refresh_token": refresh_token
-        },
+        json={"refresh_token": refresh_token},
     )
 
     assert response.status_code == 200
