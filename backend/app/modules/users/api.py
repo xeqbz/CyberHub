@@ -4,7 +4,7 @@ from app.modules.auth.dependencies import get_current_active_user
 from app.modules.users.model import User
 from app.modules.users.schemas import UserRead
 
-router = APIRouter(prefix="/users", tags=["users"])
+router = APIRouter(prefix="/api/v1/users", tags=["users"])
 
 
 @router.get(

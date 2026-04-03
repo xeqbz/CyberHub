@@ -2,7 +2,7 @@ def register_user(
     client, username: str, email: str, password: str = "strongpass123"
 ) -> dict:
     response = client.post(
-        "/auth/register",
+        "/api/v1/auth/register",
         json={
             "username": username,
             "email": email,
@@ -19,7 +19,7 @@ def auth_headers(access_token: str) -> dict[str, str]:
 
 def test_create_team_requires_auth(client):
     response = client.post(
-        "/teams",
+        "/api/v1/teams",
         json={
             "name": "Cyber Wolves",
             "description": "Competitive squad",
@@ -34,7 +34,7 @@ def test_create_team_returns_created_team(client):
     tokens = register_user(client, "vadim", "vadim@example.com")
 
     response = client.post(
-        "/teams",
+        "/api/v1/teams",
         json={
             "name": "Cyber Wolves",
             "description": "Competitive squad",
@@ -59,7 +59,7 @@ def test_create_team_with_duplicate_name_returns_409(client):
     second_user = register_user(client, "alex", "alex@example.com")
 
     first_response = client.post(
-        "/teams",
+        "/api/v1/teams",
         json={
             "name": "Cyber Wolves",
             "description": "First team",
@@ -68,7 +68,7 @@ def test_create_team_with_duplicate_name_returns_409(client):
     )
 
     second_response = client.post(
-        "/teams",
+        "/api/v1/teams",
         json={
             "name": "Cyber Wolves",
             "description": "Second team",
@@ -86,17 +86,17 @@ def test_list_teams_returns_created_teams(client):
     second_user = register_user(client, "alex", "alex@example.com")
 
     client.post(
-        "/teams",
+        "/api/v1/teams",
         json={"name": "Cyber Wolves", "description": "Team one"},
         headers=auth_headers(first_user["access_token"]),
     )
     client.post(
-        "/teams",
+        "/api/v1/teams",
         json={"name": "Night Owls", "description": "Team two"},
         headers=auth_headers(second_user["access_token"]),
     )
 
-    response = client.get("/teams")
+    response = client.get("/api/v1/teams")
 
     assert response.status_code == 200
     data = response.json()
@@ -110,7 +110,7 @@ def test_get_my_teams_returns_current_user_teams(client):
     user = register_user(client, "vadim", "vadim@example.com")
 
     client.post(
-        "/teams",
+        "/api/v1/teams",
         json={
             "name": "Cyber Wolves",
             "description": "Competitive squad",
@@ -119,7 +119,7 @@ def test_get_my_teams_returns_current_user_teams(client):
     )
 
     response = client.get(
-        "/teams/my",
+        "/api/v1/teams/my",
         headers=auth_headers(user["access_token"]),
     )
 
@@ -135,7 +135,7 @@ def test_update_team_by_owner_returns_updated_team(client):
     user = register_user(client, "vadim", "vadim@example.com")
 
     create_response = client.post(
-        "/teams",
+        "/api/v1/teams",
         json={
             "name": "Cyber Wolves",
             "description": "Competitive squad",
@@ -145,7 +145,7 @@ def test_update_team_by_owner_returns_updated_team(client):
     team_id = create_response.json()["id"]
 
     update_response = client.patch(
-        f"/teams/{team_id}",
+        f"/api/v1/teams/{team_id}",
         json={
             "name": "Cyber Wolves Pro",
             "description": "Updated description",
@@ -165,7 +165,7 @@ def test_update_team_by_non_owner_returns_403(client):
     other_user = register_user(client, "alex", "alex@example.com")
 
     create_response = client.post(
-        "/teams",
+        "/api/v1/teams",
         json={
             "name": "Cyber Wolves",
             "description": "Competitive squad",
@@ -175,7 +175,7 @@ def test_update_team_by_non_owner_returns_403(client):
     team_id = create_response.json()["id"]
 
     update_response = client.patch(
-        f"/teams/{team_id}",
+        f"/api/v1/teams/{team_id}",
         json={
             "name": "Hacked Name",
         },
@@ -190,7 +190,7 @@ def test_delete_team_by_owner_returns_204(client):
     user = register_user(client, "vadim", "vadim@example.com")
 
     create_response = client.post(
-        "/teams",
+        "/api/v1/teams",
         json={
             "name": "Cyber Wolves",
             "description": "Competitive squad",
@@ -200,11 +200,11 @@ def test_delete_team_by_owner_returns_204(client):
     team_id = create_response.json()["id"]
 
     delete_response = client.delete(
-        f"/teams/{team_id}",
+        f"/api/v1/teams/{team_id}",
         headers=auth_headers(user["access_token"]),
     )
 
     assert delete_response.status_code == 204
 
-    get_response = client.get(f"/teams/{team_id}")
+    get_response = client.get(f"/api/v1/teams/{team_id}")
     assert get_response.status_code == 404

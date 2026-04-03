@@ -26,7 +26,7 @@ from app.modules.teams.repository import TeamRepository
 from app.modules.tournaments.repository import TournamentRepository
 from app.modules.users.model import User
 
-router = APIRouter(prefix="/matches", tags=["matches"])
+router = APIRouter(prefix="/api/v1/matches", tags=["matches"])
 
 
 def get_match_service(db: Session) -> MatchService:

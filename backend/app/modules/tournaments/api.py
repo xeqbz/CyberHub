@@ -27,7 +27,7 @@ from app.modules.tournaments.service import (
 )
 from app.modules.users.model import User
 
-router = APIRouter(prefix="/tournaments", tags=["tournaments"])
+router = APIRouter(prefix="/api/v1/tournaments", tags=["tournaments"])
 
 
 def get_tournament_service(db: Session) -> TournamentService:

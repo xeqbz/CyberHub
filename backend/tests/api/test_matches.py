@@ -2,7 +2,7 @@ def register_user(
     client, username: str, email: str, password: str = "strongpass123"
 ) -> dict:
     response = client.post(
-        "/auth/register",
+        "/api/v1/auth/register",
         json={
             "username": username,
             "email": email,
@@ -19,7 +19,7 @@ def auth_headers(access_token: str) -> dict[str, str]:
 
 def create_team(client, access_token: str, name: str) -> dict:
     response = client.post(
-        "/teams",
+        "/api/v1/teams",
         json={
             "name": name,
             "description": f"{name} description",
@@ -37,7 +37,7 @@ def create_tournament(
     status: str = "REGISTRATION_OPEN",
 ) -> dict:
     response = client.post(
-        "/tournaments",
+        "/api/v1/tournaments",
         json={
             "name": name,
             "description": "Main tournament",
@@ -55,7 +55,7 @@ def register_team_to_tournament(
     client, access_token: str, tournament_id: int, team_id: int
 ) -> dict:
     response = client.post(
-        f"/tournaments/{tournament_id}/participants",
+        f"/api/v1/tournaments/{tournament_id}/participants",
         json={"team_id": team_id},
         headers=auth_headers(access_token),
     )
@@ -71,7 +71,7 @@ def create_match(
     away_team_id: int,
 ) -> dict:
     response = client.post(
-        "/matches",
+        "/api/v1/matches",
         json={
             "tournament_id": tournament_id,
             "home_team_id": home_team_id,
@@ -118,7 +118,7 @@ def test_create_match_requires_auth(client):
     owner, _, tournament, home_team, away_team = prepare_match_context(client)
 
     response = client.post(
-        "/matches",
+        "/api/v1/matches",
         json={
             "tournament_id": tournament["id"],
             "home_team_id": home_team["id"],
@@ -135,7 +135,7 @@ def test_create_match_returns_created_match(client):
     owner, _, tournament, home_team, away_team = prepare_match_context(client)
 
     response = client.post(
-        "/matches",
+        "/api/v1/matches",
         json={
             "tournament_id": tournament["id"],
             "home_team_id": home_team["id"],
@@ -165,7 +165,7 @@ def test_non_owner_cannot_create_match(client):
     )
 
     response = client.post(
-        "/matches",
+        "/api/v1/matches",
         json={
             "tournament_id": tournament["id"],
             "home_team_id": home_team["id"],
@@ -183,7 +183,7 @@ def test_cannot_create_match_with_same_teams(client):
     owner, _, tournament, home_team, _ = prepare_match_context(client)
 
     response = client.post(
-        "/matches",
+        "/api/v1/matches",
         json={
             "tournament_id": tournament["id"],
             "home_team_id": home_team["id"],
@@ -226,7 +226,7 @@ def test_cannot_create_match_if_team_not_in_tournament(client):
     )
 
     response = client.post(
-        "/matches",
+        "/api/v1/matches",
         json={
             "tournament_id": tournament["id"],
             "home_team_id": home_team["id"],
@@ -251,7 +251,7 @@ def test_update_match_score_completes_match(client):
     )
 
     response = client.patch(
-        f"/matches/{match['id']}/score",
+        f"/api/v1/matches/{match['id']}/score",
         json={
             "home_score": 2,
             "away_score": 1,
@@ -281,7 +281,7 @@ def test_invalid_winner_for_score_returns_409(client):
     )
 
     response = client.patch(
-        f"/matches/{match['id']}/score",
+        f"/api/v1/matches/{match['id']}/score",
         json={
             "home_score": 2,
             "away_score": 1,
@@ -306,7 +306,7 @@ def test_list_tournament_matches_returns_created_match(client):
         away_team["id"],
     )
 
-    response = client.get(f"/matches/tournament/{tournament['id']}")
+    response = client.get(f"/api/v1/matches/tournament/{tournament['id']}")
 
     assert response.status_code == 200
     data = response.json()
@@ -328,11 +328,11 @@ def test_delete_match_by_owner_returns_204(client):
     )
 
     delete_response = client.delete(
-        f"/matches/{match['id']}",
+        f"/api/v1/matches/{match['id']}",
         headers=auth_headers(owner["access_token"]),
     )
 
     assert delete_response.status_code == 204
 
-    get_response = client.get(f"/matches/{match['id']}")
+    get_response = client.get(f"/api/v1/matches/{match['id']}")
     assert get_response.status_code == 404

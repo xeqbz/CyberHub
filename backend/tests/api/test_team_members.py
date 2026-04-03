@@ -2,7 +2,7 @@ def register_user(
     client, username: str, email: str, password: str = "strongpass123"
 ) -> dict:
     response = client.post(
-        "/auth/register",
+        "/api/v1/auth/register",
         json={
             "username": username,
             "email": email,
@@ -19,7 +19,7 @@ def auth_headers(access_token: str) -> dict[str, str]:
 
 def create_team(client, access_token: str, name: str = "Cyber Wolves") -> dict:
     response = client.post(
-        "/teams",
+        "/api/v1/teams",
         json={
             "name": name,
             "description": "Competitive squad",
@@ -34,7 +34,7 @@ def test_list_team_members_returns_owner(client):
     owner = register_user(client, "vadim", "vadim@example.com")
     team = create_team(client, owner["access_token"])
 
-    response = client.get(f"/teams/{team['id']}/members")
+    response = client.get(f"/api/v1/teams/{team['id']}/members")
 
     assert response.status_code == 200
     data = response.json()
@@ -50,7 +50,7 @@ def test_owner_can_add_member(client):
     team = create_team(client, owner["access_token"])
 
     response = client.post(
-        f"/teams/{team['id']}/members",
+        f"/api/v1/teams/{team['id']}/members",
         json={
             "user_id": 2,
             "role": "MEMBER",
@@ -73,7 +73,7 @@ def test_non_owner_cannot_add_member(client):
     team = create_team(client, owner["access_token"])
 
     response = client.post(
-        f"/teams/{team['id']}/members",
+        f"/api/v1/teams/{team['id']}/members",
         json={
             "user_id": 3,
             "role": "MEMBER",
@@ -91,7 +91,7 @@ def test_cannot_add_same_member_twice(client):
     team = create_team(client, owner["access_token"])
 
     first_response = client.post(
-        f"/teams/{team['id']}/members",
+        f"/api/v1/teams/{team['id']}/members",
         json={
             "user_id": 2,
             "role": "MEMBER",
@@ -100,7 +100,7 @@ def test_cannot_add_same_member_twice(client):
     )
 
     second_response = client.post(
-        f"/teams/{team['id']}/members",
+        f"/api/v1/teams/{team['id']}/members",
         json={
             "user_id": 2,
             "role": "MEMBER",
@@ -119,7 +119,7 @@ def test_owner_can_update_member_role(client):
     team = create_team(client, owner["access_token"])
 
     client.post(
-        f"/teams/{team['id']}/members",
+        f"/api/v1/teams/{team['id']}/members",
         json={
             "user_id": 2,
             "role": "MEMBER",
@@ -128,7 +128,7 @@ def test_owner_can_update_member_role(client):
     )
 
     response = client.patch(
-        f"/teams/{team['id']}/members/2",
+        f"/api/v1/teams/{team['id']}/members/2",
         json={
             "role": "OWNER",
         },
@@ -147,7 +147,7 @@ def test_cannot_change_original_owner_role(client):
     team = create_team(client, owner["access_token"])
 
     response = client.patch(
-        f"/teams/{team['id']}/members/1",
+        f"/api/v1/teams/{team['id']}/members/1",
         json={
             "role": "MEMBER",
         },
@@ -164,7 +164,7 @@ def test_owner_can_remove_member(client):
     team = create_team(client, owner["access_token"])
 
     client.post(
-        f"/teams/{team['id']}/members",
+        f"/api/v1/teams/{team['id']}/members",
         json={
             "user_id": 2,
             "role": "MEMBER",
@@ -173,13 +173,13 @@ def test_owner_can_remove_member(client):
     )
 
     delete_response = client.delete(
-        f"/teams/{team['id']}/members/2",
+        f"/api/v1/teams/{team['id']}/members/2",
         headers=auth_headers(owner["access_token"]),
     )
 
     assert delete_response.status_code == 204
 
-    members_response = client.get(f"/teams/{team['id']}/members")
+    members_response = client.get(f"/api/v1/teams/{team['id']}/members")
     assert members_response.status_code == 200
     members = members_response.json()
 
@@ -192,7 +192,7 @@ def test_cannot_remove_team_owner(client):
     team = create_team(client, owner["access_token"])
 
     response = client.delete(
-        f"/teams/{team['id']}/members/1",
+        f"/api/v1/teams/{team['id']}/members/1",
         headers=auth_headers(owner["access_token"]),
     )
 

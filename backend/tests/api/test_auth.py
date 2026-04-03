@@ -1,6 +1,6 @@
 def test_register_returns_token_pair(client):
     response = client.post(
-        "/auth/register",
+        "/api/v1/auth/register",
         json={
             "username": "testuser",
             "email": "test@example.com",
@@ -23,9 +23,9 @@ def test_register_duplicate_email_returns_409(client):
         "password": "testpassword",
     }
 
-    first_response = client.post("/auth/register", json=payload)
+    first_response = client.post("/api/v1/auth/register", json=payload)
     second_response = client.post(
-        "/auth/register",
+        "/api/v1/auth/register",
         json={
             "username": "another_user",
             "email": "test@example.com",
@@ -45,10 +45,10 @@ def test_login_returns_token_pair_for_valid_credentials(client):
         "password": "testpassword",
     }
 
-    client.post("/auth/register", json=register_payload)
+    client.post("/api/v1/auth/register", json=register_payload)
 
     response = client.post(
-        "/auth/login",
+        "/api/v1/auth/login",
         json={"email": "test@example.com", "password": "testpassword"},
     )
 
@@ -67,10 +67,10 @@ def test_login_with_invalid_credentials_returns_401(client):
         "password": "testpassword",
     }
 
-    client.post("/auth/register", json=register_payload)
+    client.post("/api/v1/auth/register", json=register_payload)
 
     response = client.post(
-        "/auth/login", json={"email": "test@example.com", "password": "wrongpassword"}
+        "/api/v1/auth/login", json={"email": "test@example.com", "password": "wrongpassword"}
     )
 
     assert response.status_code == 401
@@ -79,7 +79,7 @@ def test_login_with_invalid_credentials_returns_401(client):
 
 def test_refresh_returns_new_token_pair(client):
     register_response = client.post(
-        "/auth/register",
+        "/api/v1/auth/register",
         json={
             "username": "testuser",
             "email": "test@example.com",
@@ -92,7 +92,7 @@ def test_refresh_returns_new_token_pair(client):
     refresh_token = register_response.json()["refresh_token"]
 
     response = client.post(
-        "/auth/refresh",
+        "/api/v1/auth/refresh",
         json={"refresh_token": refresh_token},
     )
 
@@ -106,7 +106,7 @@ def test_refresh_returns_new_token_pair(client):
 
 def test_refresh_with_invalid_token_returns_401(client):
     response = client.post(
-        "/auth/refresh",
+        "/api/v1/auth/refresh",
         json={
             "refresh_token": "invalid-token",
         },

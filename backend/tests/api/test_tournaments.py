@@ -2,7 +2,7 @@ def register_user(
     client, username: str, email: str, password: str = "strongpass123"
 ) -> dict:
     response = client.post(
-        "/auth/register",
+        "/api/v1/auth/register",
         json={
             "username": username,
             "email": email,
@@ -19,7 +19,7 @@ def auth_headers(access_token: str) -> dict[str, str]:
 
 def create_team(client, access_token: str, name: str = "Cyber Wolves") -> dict:
     response = client.post(
-        "/teams",
+        "/api/v1/teams",
         json={
             "name": name,
             "description": "Competitive squad",
@@ -37,7 +37,7 @@ def create_tournament(
     status: str = "DRAFT",
 ) -> dict:
     response = client.post(
-        "/tournaments",
+        "/api/v1/tournaments",
         json={
             "name": name,
             "description": "Main tournament",
@@ -53,7 +53,7 @@ def create_tournament(
 
 def test_create_tournament_requires_auth(client):
     response = client.post(
-        "/tournaments",
+        "/api/v1/tournaments",
         json={
             "name": "Cyber Cup",
             "description": "Main tournament",
@@ -71,7 +71,7 @@ def test_create_tournament_returns_created_tournament(client):
     owner = register_user(client, "vadim", "vadim@example.com")
 
     response = client.post(
-        "/tournaments",
+        "/api/v1/tournaments",
         json={
             "name": "Cyber Cup",
             "description": "Main tournament",
@@ -98,7 +98,7 @@ def test_create_tournament_with_duplicate_name_returns_409(client):
     second_owner = register_user(client, "alex", "alex@example.com")
 
     first_response = client.post(
-        "/tournaments",
+        "/api/v1/tournaments",
         json={
             "name": "Cyber Cup",
             "description": "Main tournament",
@@ -110,7 +110,7 @@ def test_create_tournament_with_duplicate_name_returns_409(client):
     )
 
     second_response = client.post(
-        "/tournaments",
+        "/api/v1/tournaments",
         json={
             "name": "Cyber Cup",
             "description": "Another tournament",
@@ -135,7 +135,7 @@ def test_list_tournaments_returns_created_tournaments(client):
     create_tournament(client, first_owner["access_token"], name="Cyber Cup")
     create_tournament(client, second_owner["access_token"], name="Night League")
 
-    response = client.get("/tournaments")
+    response = client.get("/api/v1/tournaments")
 
     assert response.status_code == 200
     data = response.json()
@@ -150,7 +150,7 @@ def test_update_tournament_by_owner_returns_updated_tournament(client):
     tournament = create_tournament(client, owner["access_token"], name="Cyber Cup")
 
     response = client.patch(
-        f"/tournaments/{tournament['id']}",
+        f"/api/v1/tournaments/{tournament['id']}",
         json={
             "name": "Cyber Cup Pro",
             "description": "Updated description",
@@ -175,7 +175,7 @@ def test_update_tournament_by_non_owner_returns_403(client):
     tournament = create_tournament(client, owner["access_token"], name="Cyber Cup")
 
     response = client.patch(
-        f"/tournaments/{tournament['id']}",
+        f"/api/v1/tournaments/{tournament['id']}",
         json={
             "name": "Hacked Cup",
         },
@@ -197,7 +197,7 @@ def test_can_add_participant_when_registration_is_open(client):
     )
 
     response = client.post(
-        f"/tournaments/{tournament['id']}/participants",
+        f"/api/v1/tournaments/{tournament['id']}/participants",
         json={
             "team_id": team["id"],
         },
@@ -223,7 +223,7 @@ def test_cannot_add_participant_when_registration_is_closed(client):
     )
 
     response = client.post(
-        f"/tournaments/{tournament['id']}/participants",
+        f"/api/v1/tournaments/{tournament['id']}/participants",
         json={
             "team_id": team["id"],
         },
@@ -245,13 +245,13 @@ def test_cannot_add_same_team_twice_to_tournament(client):
     )
 
     first_response = client.post(
-        f"/tournaments/{tournament['id']}/participants",
+        f"/api/v1/tournaments/{tournament['id']}/participants",
         json={"team_id": team["id"]},
         headers=auth_headers(owner["access_token"]),
     )
 
     second_response = client.post(
-        f"/tournaments/{tournament['id']}/participants",
+        f"/api/v1/tournaments/{tournament['id']}/participants",
         json={"team_id": team["id"]},
         headers=auth_headers(owner["access_token"]),
     )
@@ -275,18 +275,18 @@ def test_can_remove_participant(client):
     )
 
     add_response = client.post(
-        f"/tournaments/{tournament['id']}/participants",
+        f"/api/v1/tournaments/{tournament['id']}/participants",
         json={"team_id": team["id"]},
         headers=auth_headers(owner["access_token"]),
     )
     assert add_response.status_code == 201
 
     delete_response = client.delete(
-        f"/tournaments/{tournament['id']}/participants/{team['id']}",
+        f"/api/v1/tournaments/{tournament['id']}/participants/{team['id']}",
         headers=auth_headers(owner["access_token"]),
     )
     assert delete_response.status_code == 204
 
-    list_response = client.get(f"/tournaments/{tournament['id']}/participants")
+    list_response = client.get(f"/api/v1/tournaments/{tournament['id']}/participants")
     assert list_response.status_code == 200
     assert list_response.json() == []

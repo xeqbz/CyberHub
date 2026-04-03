@@ -1,5 +1,5 @@
 def test_users_me_requires_auth(client):
-    response = client.get("/users/me")
+    response = client.get("/api/v1/users/me")
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Authentication credentials were not provided"
@@ -7,7 +7,7 @@ def test_users_me_requires_auth(client):
 
 def test_users_me_returns_current_user(client):
     register_response = client.post(
-        "/auth/register",
+        "/api/v1/auth/register",
         json={
             "username": "testuser",
             "email": "test@example.com",
@@ -18,7 +18,7 @@ def test_users_me_returns_current_user(client):
     token = register_response.json()["access_token"]
 
     response = client.get(
-        "/users/me",
+        "/api/v1/users/me",
         headers={"Authorization": f"Bearer {token}"},
     )
 
