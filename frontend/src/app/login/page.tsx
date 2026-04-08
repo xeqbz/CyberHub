@@ -1,77 +1,95 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { apiRequest } from "@/src/shared/api/client";
 
 type TokenPair = {
-    access_token: string;
-    refresh_token: string;
-    token_type: string;
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
 };
 
 export default function LoginPage() {
-    const router = useRouter();
+  const router = useRouter();
 
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
-    const [error, setError] = useState("");
-    const [isLoading, setIsLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-    async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-        event.preventDefault();
-        setError("");
-        setIsLoading(true);
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setIsLoading(true);
 
-        try {
-            const data = await apiRequest<TokenPair>("/auth/login", {
-                method: "POST",
-                body: { email, password },
-            });
+    try {
+      const data = await apiRequest<TokenPair>("/auth/login", {
+        method: "POST",
+        body: { email, password },
+      });
 
-            localStorage.setItem("access_token", data.access_token);
-            localStorage.setItem("refresh_token", data.refresh_token);
+      localStorage.setItem("access_token", data.access_token);
+      localStorage.setItem("refresh_token", data.refresh_token);
 
-            router.push("/profile");
-        } catch (err) {
-            setError(err instanceof Error ? err.message : "Login failed");
-        } finally {
-            setIsLoading(false);
-        }
+      router.push("/profile");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setIsLoading(false);
     }
+  }
 
-    return (
-        <main className="mx-auto max-w-md p-6">
-            <h1 className="mb-6 text-2xl font-bold">Login</h1>
+  return (
+    <div className="auth-layout">
+      <div className="auth-card">
+        <div className="auth-logo">CH</div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-                <input
-                    className="w-full rounded border p-3"
-                    type="email"
-                    placeholder="Email"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                />
+        <h1 className="auth-title">Login</h1>
+        <p className="auth-subtitle">
+          Sign in to your CyberHub account and continue your competitive journey.
+        </p>
 
-                <input
-                    className="w-full rounded border p-3"
-                    type="password"
-                    placeholder="Password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                />
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label htmlFor="email">Email</label>
+            <input
+              id="email"
+              type="email"
+              placeholder="Enter your email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              autoComplete="email"
+              required
+            />
+          </div>
 
-                {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          <div className="form-group">
+            <label htmlFor="password">Password</label>
+            <input
+              id="password"
+              type="password"
+              placeholder="Enter your password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              required
+            />
+          </div>
 
-                <button
-                    className="w-full rounded bg-black px-4 py-3 text-white disabled:opacity-50"
-                    type="submit"
-                    disabled={isLoading}
-                >
-                    {isLoading ? "Logging in..." : "Login"}
-                </button>
-            </form>
-        </main>
-    );
+          {error ? <p className="error-text">{error}</p> : null}
+
+          <button type="submit" disabled={isLoading}>
+            {isLoading ? "Logging in..." : "Login"}
+          </button>
+        </form>
+
+        <div className="auth-footer">
+          Don&apos;t have an account? <Link href="/register">Create one</Link>
+        </div>
+      </div>
+    </div>
+  );
 }

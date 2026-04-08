@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -43,44 +44,66 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="mx-auto max-w-md p-6">
-      <h1 className="mb-6 text-2xl font-bold">Register</h1>
+    <div className="auth-layout">
+      <div className="auth-card">
+        <div className="auth-logo">CH</div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <input
-          className="w-full rounded border p-3"
-          type="text"
-          placeholder="Username"
-          value={username}
-          onChange={(event) => setUsername(event.target.value)}
-        />
+        <h1 className="auth-title">Register</h1>
+        <p className="auth-subtitle">
+          Join CyberHub to play matches, track stats and compete in tournaments.
+        </p>
 
-        <input
-          className="w-full rounded border p-3"
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-        />
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label htmlFor="username">Username</label>
+            <input
+              id="username"
+              type="text"
+              placeholder="Choose a username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              autoComplete="username"
+              required
+            />
+          </div>
 
-        <input
-          className="w-full rounded border p-3"
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-        />
+          <div className="form-group">
+            <label htmlFor="email">Email</label>
+            <input
+              id="email"
+              type="email"
+              placeholder="Enter your email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              autoComplete="email"
+              required
+            />
+          </div>
 
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          <div className="form-group">
+            <label htmlFor="password">Password</label>
+            <input
+              id="password"
+              type="password"
+              placeholder="Create a password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="new-password"
+              required
+            />
+          </div>
 
-        <button
-          className="w-full rounded bg-black px-4 py-3 text-white disabled:opacity-50"
-          type="submit"
-          disabled={isLoading}
-        >
-          {isLoading ? "Registering..." : "Register"}
-        </button>
-      </form>
-    </main>
+          {error ? <p className="error-text">{error}</p> : null}
+
+          <button type="submit" disabled={isLoading}>
+            {isLoading ? "Registering..." : "Register"}
+          </button>
+        </form>
+
+        <div className="auth-footer">
+          Already have an account? <Link href="/login">Login</Link>
+        </div>
+      </div>
+    </div>
   );
 }
