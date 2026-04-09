@@ -5,12 +5,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { apiRequest } from "@/src/shared/api/client";
-
-type TokenPair = {
-  access_token: string;
-  refresh_token: string;
-  token_type: string;
-};
+import { saveTokens, type TokenPair } from "@/src/shared/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -31,10 +26,8 @@ export default function LoginPage() {
         body: { email, password },
       });
 
-      localStorage.setItem("access_token", data.access_token);
-      localStorage.setItem("refresh_token", data.refresh_token);
-
-      router.push("/profile");
+      saveTokens(data);
+      router.push("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

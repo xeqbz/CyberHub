@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { apiRequest } from "@/src/shared/api/client";
+import { clearTokens, getAccessToken } from "@/src/shared/lib/auth";
 
 type User = {
   id: number | string;
@@ -26,7 +27,7 @@ export default function ProfilePage() {
   useEffect(() => {
     async function loadProfile() {
       try {
-        const token = localStorage.getItem("access_token");
+        const token = getAccessToken();
 
         if (!token) {
           router.replace("/login");
@@ -54,8 +55,7 @@ export default function ProfilePage() {
   }, [user]);
 
   function handleLogout() {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
+    clearTokens();
     router.push("/login");
   }
 
