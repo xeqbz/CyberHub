@@ -11,6 +11,18 @@ function prettifyFieldName(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1).replaceAll("_", " ");
 }
 
+function normalizeValidationMessage(msg: string): string {
+  if (msg === "String should have at least 8 characters") {
+    return "Must contain at least 8 characters";
+  }
+
+  if (msg === "Field required") {
+    return "This field is required";
+  }
+
+  return msg;
+}
+
 function extractErrorMessage(errorData: unknown): string {
   if (!errorData) {
     return "Request failed";
@@ -39,16 +51,18 @@ function extractErrorMessage(errorData: unknown): string {
         }
 
         const entry = item as Record<string, unknown>;
-        const msg =
+        const rawMsg =
           typeof entry.msg === "string"
             ? entry.msg
             : typeof entry.message === "string"
               ? entry.message
               : null;
 
-        if (!msg) {
+        if (!rawMsg) {
           return null;
         }
+
+        const msg = normalizeValidationMessage(rawMsg);
 
         const rawLoc = Array.isArray(entry.loc)
           ? entry.loc.filter(
@@ -69,6 +83,13 @@ function extractErrorMessage(errorData: unknown): string {
             ? prettifyFieldName(String(cleanedLoc[cleanedLoc.length - 1]))
             : null;
 
+        if (
+          msg === "Must contain at least 8 characters" ||
+          msg === "This field is required"
+        ) {
+          return field ? `${field}: ${msg}` : msg;
+        }
+
         return field ? `${field}: ${msg}` : msg;
       })
       .filter(Boolean);
@@ -78,8 +99,24 @@ function extractErrorMessage(errorData: unknown): string {
     }
   }
 
+  if (detail && typeof detail === "object") {
+    const detailRecord = detail as Record<string, unknown>;
+
+    if (typeof detailRecord.message === "string") {
+      return detailRecord.message;
+    }
+
+    if (typeof detailRecord.error === "string") {
+      return detailRecord.error;
+    }
+  }
+
   if (typeof record.message === "string") {
     return record.message;
+  }
+
+  if (typeof record.error === "string") {
+    return record.error;
   }
 
   return "Request failed";
@@ -109,7 +146,7 @@ export async function apiRequest<T>(
     });
   } catch {
     throw new Error(
-      "Cannot connect to backend. Check that the backend is running and CORS is configured.",
+      "Cannot connect to backend. Check that the backend is running.",
     );
   }
 

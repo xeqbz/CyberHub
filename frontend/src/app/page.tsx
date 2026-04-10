@@ -13,7 +13,7 @@ export default function HomePage() {
       <div className="page-header">
         <div>
           <span className="badge">CyberHub Platform</span>
-          <h1 className="page-title" style={{ marginTop: "14px" }}>
+          <h1 className="page-title" style={{ marginTop: 14 }}>
             Competitive esports management in one place
           </h1>
           <p className="page-subtitle">
@@ -40,7 +40,7 @@ export default function HomePage() {
         </div>
       </div>
 
-      <div className="grid grid-3" style={{ marginBottom: "24px" }}>
+      <div className="grid grid-3" style={{ marginBottom: 24 }}>
         <div className="card">
           <h3>Tournaments</h3>
           <p>
@@ -68,15 +68,15 @@ export default function HomePage() {
 
       <section>
         <h2>Quick navigation</h2>
-        <p style={{ marginBottom: "20px" }}>
-          This is the first frontend shell. Next we can connect real business
-          pages for teams and tournaments.
+        <p style={{ marginBottom: 20 }}>
+          Frontend foundation is ready. Next we can connect real business pages
+          for teams and tournaments.
         </p>
 
         <div className="grid grid-2">
           <div className="card">
             <h3>Account</h3>
-            <div className="row" style={{ marginTop: "16px" }}>
+            <div className="row" style={{ marginTop: 16 }}>
               <Link href="/profile">
                 <button type="button">Profile</button>
               </Link>
@@ -86,12 +86,18 @@ export default function HomePage() {
               <Link href="/register" className="btn btn-secondary">
                 Register
               </Link>
+              <Link href="/teams" className="btn btn-secondary">
+                Teams
+              </Link>
+              <Link href="/tournaments" className="btn btn-secondary">
+                Tournaments
+              </Link>
             </div>
           </div>
 
           <div className="card">
             <h3>Coming next</h3>
-            <p style={{ marginBottom: "16px" }}>
+            <p style={{ marginBottom: 16 }}>
               Teams, tournaments, protected routes and shared navigation.
             </p>
             <div className="badge">Frontend foundation ready</div>
