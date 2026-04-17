@@ -40,29 +40,45 @@ export default function HomePage() {
         </div>
       </div>
 
-      <div className="grid grid-3" style={{ marginBottom: 24 }}>
+      <div className="grid grid-2" style={{ marginBottom: "24px" }}>
+        <div className="card">
+          <h3>Profile</h3>
+          <p>Review your account information and session state.</p>
+          <div className="row" style={{ marginTop: "16px" }}>
+            <Link href="/profile" className="btn btn-secondary">
+              Open profile
+            </Link>
+          </div>
+        </div>
+
+        <div className="card">
+          <h3>Teams</h3>
+          <p>Create a team, inspect rosters and manage participation.</p>
+          <div className="row" style={{ marginTop: "16px" }}>
+            <Link href="/teams" className="btn btn-secondary">
+              Open teams
+            </Link>
+          </div>
+        </div>
+
         <div className="card">
           <h3>Tournaments</h3>
-          <p>
-            Create, browse and manage tournaments with transparent brackets and
-            match progression.
-          </p>
+          <p>Create tournaments and register teams into active brackets.</p>
+          <div className="row" style={{ marginTop: "16px" }}>
+            <Link href="/tournaments" className="btn btn-secondary">
+              Open tournaments
+            </Link>
+          </div>
         </div>
 
         <div className="card">
-          <h3>Ranked matches</h3>
-          <p>
-            Build competitive flows around matchmaking, ratings and player
-            performance.
-          </p>
-        </div>
-
-        <div className="card">
-          <h3>Player profiles</h3>
-          <p>
-            Keep identity, activity and future match statistics in a single
-            account space.
-          </p>
+          <h3>Matches</h3>
+          <p>Create matches, inspect score and control tournament game flow.</p>
+          <div className="row" style={{ marginTop: "16px" }}>
+            <Link href="/matches" className="btn btn-secondary">
+              Open matches
+            </Link>
+          </div>
         </div>
       </div>
 

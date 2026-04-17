@@ -1,0 +1,382 @@
+"use client";
+
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+
+import {
+  deleteMatch,
+  getMatch,
+  updateMatch,
+  updateMatchScore,
+  type MatchRead,
+} from "@/src/shared/api/matches";
+import { getAccessToken } from "@/src/shared/lib/auth";
+
+function formatDate(value: string | null): string {
+  if (!value) return "Not specified";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleString();
+}
+
+export default function MatchDetailsPage() {
+  const params = useParams();
+  const router = useRouter();
+  const matchId = useMemo(() => Number(params?.id), [params]);
+
+  const [match, setMatch] = useState<MatchRead | null>(null);
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+
+  const [homeScore, setHomeScore] = useState("0");
+  const [awayScore, setAwayScore] = useState("0");
+  const [winnerTeamId, setWinnerTeamId] = useState("");
+
+  const [scoreError, setScoreError] = useState("");
+  const [scoreSuccess, setScoreSuccess] = useState("");
+  const [isUpdatingScore, setIsUpdatingScore] = useState(false);
+
+  const [statusValue, setStatusValue] = useState("");
+  const [scheduledAtValue, setScheduledAtValue] = useState("");
+
+  const [updateError, setUpdateError] = useState("");
+  const [isUpdatingMatch, setIsUpdatingMatch] = useState(false);
+
+  const [deleteError, setDeleteError] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    async function loadMatch() {
+      if (!Number.isFinite(matchId)) {
+        setError("Invalid match id");
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        setError("");
+        setIsLoading(true);
+
+        const data = await getMatch(matchId);
+        setMatch(data);
+        setHomeScore(String(data.home_score ?? 0));
+        setAwayScore(String(data.away_score ?? 0));
+        setWinnerTeamId(data.winner_team_id ? String(data.winner_team_id) : "");
+        setStatusValue(data.status);
+        setScheduledAtValue(
+          data.scheduled_at
+            ? new Date(data.scheduled_at).toISOString().slice(0, 16)
+            : "",
+        );
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load match");
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadMatch();
+  }, [matchId]);
+
+  async function handleScoreSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const token = getAccessToken();
+    if (!token) {
+      setScoreError("You need to login before updating score");
+      return;
+    }
+
+    setScoreError("");
+    setScoreSuccess("");
+    setIsUpdatingScore(true);
+
+    try {
+      const updated = await updateMatchScore(
+        matchId,
+        {
+          home_score: Number(homeScore),
+          away_score: Number(awayScore),
+          winner_team_id: winnerTeamId ? Number(winnerTeamId) : null,
+        },
+        token,
+      );
+
+      setMatch(updated);
+      setScoreSuccess("Score updated successfully");
+    } catch (err) {
+      setScoreError(
+        err instanceof Error ? err.message : "Failed to update score",
+      );
+    } finally {
+      setIsUpdatingScore(false);
+    }
+  }
+
+  async function handleMatchUpdate(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const token = getAccessToken();
+    if (!token) {
+      setUpdateError("You need to login before updating a match");
+      return;
+    }
+
+    setUpdateError("");
+    setIsUpdatingMatch(true);
+
+    try {
+      const updated = await updateMatch(
+        matchId,
+        {
+          status: statusValue || undefined,
+          scheduled_at: scheduledAtValue
+            ? new Date(scheduledAtValue).toISOString()
+            : null,
+        },
+        token,
+      );
+
+      setMatch(updated);
+    } catch (err) {
+      setUpdateError(
+        err instanceof Error ? err.message : "Failed to update match",
+      );
+    } finally {
+      setIsUpdatingMatch(false);
+    }
+  }
+
+  async function handleDeleteMatch() {
+    const token = getAccessToken();
+    if (!token) {
+      setDeleteError("You need to login before deleting a match");
+      return;
+    }
+
+    setDeleteError("");
+    setIsDeleting(true);
+
+    try {
+      await deleteMatch(matchId, token);
+      router.push("/matches");
+    } catch (err) {
+      setDeleteError(
+        err instanceof Error ? err.message : "Failed to delete match",
+      );
+      setIsDeleting(false);
+    }
+  }
+
+  return (
+    <main>
+      <div className="page-header">
+        <div>
+          <span className="badge">Match details</span>
+          <h1 className="page-title" style={{ marginTop: "14px" }}>
+            {match
+              ? `${match.home_team.name} vs ${match.away_team.name}`
+              : "Match"}
+          </h1>
+          <p className="page-subtitle">
+            Inspect metadata, update score and manage match lifecycle.
+          </p>
+        </div>
+
+        <div className="row">
+          <Link href="/matches" className="btn btn-secondary">
+            Back to matches
+          </Link>
+          {match ? (
+            <Link
+              href={`/tournaments/${match.tournament_id}`}
+              className="btn btn-secondary"
+            >
+              Open tournament
+            </Link>
+          ) : null}
+        </div>
+      </div>
+
+      {isLoading ? (
+        <section>
+          <h2>Loading match...</h2>
+          <p>Please wait while we fetch match details.</p>
+        </section>
+      ) : null}
+
+      {!isLoading && error ? (
+        <section>
+          <h2>Failed to load match</h2>
+          <p className="error-text" style={{ marginTop: "10px" }}>
+            {error}
+          </p>
+        </section>
+      ) : null}
+
+      {!isLoading && match ? (
+        <>
+          <div className="grid grid-3" style={{ marginBottom: "24px" }}>
+            <div className="card stat-card">
+              <div className="stat-label">Status</div>
+              <div className="stat-value">{match.status}</div>
+            </div>
+
+            <div className="card stat-card">
+              <div className="stat-label">Score</div>
+              <div className="stat-value">
+                {match.home_score ?? "-"} : {match.away_score ?? "-"}
+              </div>
+            </div>
+
+            <div className="card stat-card">
+              <div className="stat-label">Winner</div>
+              <div className="stat-value">
+                {match.winner_team?.name ?? "Not set"}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-2" style={{ marginBottom: "24px" }}>
+            <section>
+              <h2>General info</h2>
+
+              <div className="grid" style={{ marginTop: "18px" }}>
+                <div>
+                  <p className="muted">Tournament</p>
+                  <strong>{match.tournament.name}</strong>
+                </div>
+
+                <div>
+                  <p className="muted">Home team</p>
+                  <strong>{match.home_team.name}</strong>
+                </div>
+
+                <div>
+                  <p className="muted">Away team</p>
+                  <strong>{match.away_team.name}</strong>
+                </div>
+
+                <div>
+                  <p className="muted">Scheduled at</p>
+                  <strong>{formatDate(match.scheduled_at)}</strong>
+                </div>
+              </div>
+            </section>
+
+            <section>
+              <h2>Update score</h2>
+
+              <form onSubmit={handleScoreSubmit}>
+                <div className="grid grid-2">
+                  <div className="form-group">
+                    <label htmlFor="home-score">Home score</label>
+                    <input
+                      id="home-score"
+                      type="number"
+                      min={0}
+                      value={homeScore}
+                      onChange={(event) => setHomeScore(event.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="away-score">Away score</label>
+                    <input
+                      id="away-score"
+                      type="number"
+                      min={0}
+                      value={awayScore}
+                      onChange={(event) => setAwayScore(event.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="winner-team">Winner team</label>
+                  <select
+                    id="winner-team"
+                    value={winnerTeamId}
+                    onChange={(event) => setWinnerTeamId(event.target.value)}
+                  >
+                    <option value="">No winner</option>
+                    <option value={match.home_team.id}>{match.home_team.name}</option>
+                    <option value={match.away_team.id}>{match.away_team.name}</option>
+                  </select>
+                </div>
+
+                {scoreError ? <p className="error-text">{scoreError}</p> : null}
+                {scoreSuccess ? (
+                  <p className="success-text">{scoreSuccess}</p>
+                ) : null}
+
+                <button type="submit" disabled={isUpdatingScore}>
+                  {isUpdatingScore ? "Updating..." : "Update score"}
+                </button>
+              </form>
+            </section>
+          </div>
+
+          <div className="grid grid-2" style={{ marginBottom: "24px" }}>
+            <section>
+              <h2>Update match</h2>
+
+              <form onSubmit={handleMatchUpdate}>
+                <div className="form-group">
+                  <label htmlFor="match-status">Status</label>
+                  <input
+                    id="match-status"
+                    type="text"
+                    value={statusValue}
+                    onChange={(event) => setStatusValue(event.target.value)}
+                    placeholder="Enter match status"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="match-scheduled-at">Scheduled at</label>
+                  <input
+                    id="match-scheduled-at"
+                    type="datetime-local"
+                    value={scheduledAtValue}
+                    onChange={(event) =>
+                      setScheduledAtValue(event.target.value)
+                    }
+                  />
+                </div>
+
+                {updateError ? <p className="error-text">{updateError}</p> : null}
+
+                <button type="submit" disabled={isUpdatingMatch}>
+                  {isUpdatingMatch ? "Saving..." : "Save changes"}
+                </button>
+              </form>
+            </section>
+
+            <section>
+              <h2>Danger zone</h2>
+              <p style={{ marginBottom: "18px" }}>
+                Deleting a match removes it permanently.
+              </p>
+
+              {deleteError ? <p className="error-text">{deleteError}</p> : null}
+
+              <button
+                type="button"
+                onClick={handleDeleteMatch}
+                disabled={isDeleting}
+              >
+                {isDeleting ? "Deleting..." : "Delete match"}
+              </button>
+            </section>
+          </div>
+        </>
+      ) : null}
+    </main>
+  );
+}

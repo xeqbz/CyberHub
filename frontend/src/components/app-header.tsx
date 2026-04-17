@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: "/profile", label: "Profile" },
   { href: "/teams", label: "Teams" },
   { href: "/tournaments", label: "Tournaments" },
+  { href: "/matches", label: "Matches" },
 ];
 
 export default function AppHeader() {
