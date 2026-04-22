@@ -14,6 +14,8 @@ import {
 import { getAccessToken } from "@/src/shared/lib/auth";
 import Alert from "@/src/components/ui/alert";
 import StatusBadge from "@/src/components/ui/status-badge";
+import EmptyState from "@/src/components/ui/empty-state";
+import { useCurrentUser } from "@/src/hooks/use-current-user";
 
 function formatDate(value: string | null): string {
   if (!value) return "Not specified";
@@ -24,10 +26,18 @@ function formatDate(value: string | null): string {
   return date.toLocaleString();
 }
 
+const MATCH_STATUS_OPTIONS = [
+  "SCHEDULED",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "CANCELLED",
+];
+
 export default function MatchDetailsPage() {
   const params = useParams();
   const router = useRouter();
   const matchId = useMemo(() => Number(params?.id), [params]);
+  const { user: currentUser, isLoading: isLoadingCurrentUser } = useCurrentUser();
 
   const [match, setMatch] = useState<MatchRead | null>(null);
   const [error, setError] = useState("");
@@ -81,7 +91,7 @@ export default function MatchDetailsPage() {
       }
     }
 
-    loadMatch();
+    void loadMatch();
   }, [matchId]);
 
   async function handleScoreSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -162,6 +172,14 @@ export default function MatchDetailsPage() {
       return;
     }
 
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this match?",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
     setDeleteError("");
     setIsDeleting(true);
 
@@ -175,6 +193,10 @@ export default function MatchDetailsPage() {
       setIsDeleting(false);
     }
   }
+
+  const isOwner = Boolean(
+    currentUser && match && currentUser.id === match.tournament.owner_id,
+  );
 
   return (
     <main>
@@ -219,6 +241,12 @@ export default function MatchDetailsPage() {
 
       {!isLoading && match ? (
         <>
+          {!isLoadingCurrentUser && !isOwner ? (
+            <Alert variant="info" title="Read-only mode">
+              You are not the owner of the tournament for this match, so edit actions are hidden.
+            </Alert>
+          ) : null}
+
           <div className="grid grid-3" style={{ marginBottom: "24px" }}>
             <div className="card stat-card">
               <div className="stat-label">Status</div>
@@ -272,62 +300,69 @@ export default function MatchDetailsPage() {
             <section>
               <h2>Update score</h2>
 
-              <form onSubmit={handleScoreSubmit}>
-                <div className="grid grid-2">
-                  <div className="form-group">
-                    <label htmlFor="home-score">Home score</label>
-                    <input
-                      id="home-score"
-                      type="number"
-                      min={0}
-                      value={homeScore}
-                      onChange={(event) => setHomeScore(event.target.value)}
-                      required
-                    />
+              {isOwner ? (
+                <form onSubmit={handleScoreSubmit}>
+                  <div className="grid grid-2">
+                    <div className="form-group">
+                      <label htmlFor="home-score">Home score</label>
+                      <input
+                        id="home-score"
+                        type="number"
+                        min={0}
+                        value={homeScore}
+                        onChange={(event) => setHomeScore(event.target.value)}
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="away-score">Away score</label>
+                      <input
+                        id="away-score"
+                        type="number"
+                        min={0}
+                        value={awayScore}
+                        onChange={(event) => setAwayScore(event.target.value)}
+                        required
+                      />
+                    </div>
                   </div>
 
                   <div className="form-group">
-                    <label htmlFor="away-score">Away score</label>
-                    <input
-                      id="away-score"
-                      type="number"
-                      min={0}
-                      value={awayScore}
-                      onChange={(event) => setAwayScore(event.target.value)}
-                      required
-                    />
+                    <label htmlFor="winner-team">Winner team</label>
+                    <select
+                      id="winner-team"
+                      value={winnerTeamId}
+                      onChange={(event) => setWinnerTeamId(event.target.value)}
+                    >
+                      <option value="">No winner</option>
+                      <option value={match.home_team.id}>{match.home_team.name}</option>
+                      <option value={match.away_team.id}>{match.away_team.name}</option>
+                    </select>
                   </div>
-                </div>
 
-                <div className="form-group">
-                  <label htmlFor="winner-team">Winner team</label>
-                  <select
-                    id="winner-team"
-                    value={winnerTeamId}
-                    onChange={(event) => setWinnerTeamId(event.target.value)}
-                  >
-                    <option value="">No winner</option>
-                    <option value={match.home_team.id}>{match.home_team.name}</option>
-                    <option value={match.away_team.id}>{match.away_team.name}</option>
-                  </select>
-                </div>
+                  {scoreError ? (
+                    <Alert variant="error" title="Score update failed">
+                      {scoreError}
+                    </Alert>
+                  ) : null}
 
-                {scoreError ? (
-                  <Alert variant="error" title="Score update failed">
-                    {scoreError}
-                  </Alert>
-                ) : null}
+                  {scoreSuccess ? (
+                    <Alert variant="success" title="Score updated">
+                      {scoreSuccess}
+                    </Alert>
+                  ) : null}
 
-                {scoreSuccess ? (
-                  <Alert variant="success" title="Score updated">
-                    {scoreSuccess}
-                  </Alert>
-                ) : null}
-
-                <button type="submit" disabled={isUpdatingScore}>
-                  {isUpdatingScore ? "Updating..." : "Update score"}
-                </button>
-              </form>
+                  <button type="submit" disabled={isUpdatingScore}>
+                    {isUpdatingScore ? "Updating..." : "Update score"}
+                  </button>
+                </form>
+              ) : (
+                <EmptyState
+                  title="Owner action only"
+                  description="Only the tournament owner can update match score."
+                />
+              )}
             </section>
           </div>
 
@@ -335,44 +370,55 @@ export default function MatchDetailsPage() {
             <section>
               <h2>Update match</h2>
 
-              <form onSubmit={handleMatchUpdate}>
-                <div className="form-group">
-                  <label htmlFor="match-status">Status</label>
-                  <input
-                    id="match-status"
-                    type="text"
-                    value={statusValue}
-                    onChange={(event) => setStatusValue(event.target.value)}
-                    placeholder="Enter match status"
-                  />
-                </div>
+              {isOwner ? (
+                <form onSubmit={handleMatchUpdate}>
+                  <div className="form-group">
+                    <label htmlFor="match-status">Status</label>
+                    <select
+                      id="match-status"
+                      value={statusValue}
+                      onChange={(event) => setStatusValue(event.target.value)}
+                    >
+                      {MATCH_STATUS_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div className="form-group">
-                  <label htmlFor="match-scheduled-at">Scheduled at</label>
-                  <input
-                    id="match-scheduled-at"
-                    type="datetime-local"
-                    value={scheduledAtValue}
-                    onChange={(event) => setScheduledAtValue(event.target.value)}
-                  />
-                </div>
+                  <div className="form-group">
+                    <label htmlFor="match-scheduled-at">Scheduled at</label>
+                    <input
+                      id="match-scheduled-at"
+                      type="datetime-local"
+                      value={scheduledAtValue}
+                      onChange={(event) => setScheduledAtValue(event.target.value)}
+                    />
+                  </div>
 
-                {updateError ? (
-                  <Alert variant="error" title="Match update failed">
-                    {updateError}
-                  </Alert>
-                ) : null}
+                  {updateError ? (
+                    <Alert variant="error" title="Match update failed">
+                      {updateError}
+                    </Alert>
+                  ) : null}
 
-                {updateSuccess ? (
-                  <Alert variant="success" title="Match updated">
-                    {updateSuccess}
-                  </Alert>
-                ) : null}
+                  {updateSuccess ? (
+                    <Alert variant="success" title="Match updated">
+                      {updateSuccess}
+                    </Alert>
+                  ) : null}
 
-                <button type="submit" disabled={isUpdatingMatch}>
-                  {isUpdatingMatch ? "Saving..." : "Save changes"}
-                </button>
-              </form>
+                  <button type="submit" disabled={isUpdatingMatch}>
+                    {isUpdatingMatch ? "Saving..." : "Save changes"}
+                  </button>
+                </form>
+              ) : (
+                <EmptyState
+                  title="Owner action only"
+                  description="Only the tournament owner can edit this match."
+                />
+              )}
             </section>
 
             <section>
@@ -381,19 +427,28 @@ export default function MatchDetailsPage() {
                 Deleting a match removes it permanently.
               </p>
 
-              {deleteError ? (
-                <Alert variant="error" title="Delete failed">
-                  {deleteError}
-                </Alert>
-              ) : null}
+              {isOwner ? (
+                <>
+                  {deleteError ? (
+                    <Alert variant="error" title="Delete failed">
+                      {deleteError}
+                    </Alert>
+                  ) : null}
 
-              <button
-                type="button"
-                onClick={handleDeleteMatch}
-                disabled={isDeleting}
-              >
-                {isDeleting ? "Deleting..." : "Delete match"}
-              </button>
+                  <button
+                    type="button"
+                    onClick={handleDeleteMatch}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? "Deleting..." : "Delete match"}
+                  </button>
+                </>
+              ) : (
+                <EmptyState
+                  title="Owner action only"
+                  description="Only the tournament owner can delete this match."
+                />
+              )}
             </section>
           </div>
         </>

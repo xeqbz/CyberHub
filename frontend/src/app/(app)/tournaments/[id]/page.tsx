@@ -18,6 +18,7 @@ import { getAccessToken } from "@/src/shared/lib/auth";
 import Alert from "@/src/components/ui/alert";
 import EmptyState from "@/src/components/ui/empty-state";
 import StatusBadge from "@/src/components/ui/status-badge";
+import { useCurrentUser } from "@/src/hooks/use-current-user";
 
 const STATUS_OPTIONS: TournamentStatus[] = [
   "DRAFT",
@@ -40,6 +41,7 @@ function formatDate(value: string | null): string {
 export default function TournamentDetailsPage() {
   const params = useParams();
   const tournamentId = useMemo(() => Number(params?.id), [params]);
+  const { user: currentUser, isLoading: isLoadingCurrentUser } = useCurrentUser();
 
   const [tournament, setTournament] = useState<TournamentRead | null>(null);
   const [tournamentMatches, setTournamentMatches] = useState<MatchRead[]>([]);
@@ -96,7 +98,7 @@ export default function TournamentDetailsPage() {
       }
     }
 
-    loadTournamentData();
+    void loadTournamentData();
   }, [tournamentId]);
 
   useEffect(() => {
@@ -112,7 +114,7 @@ export default function TournamentDetailsPage() {
       }
     }
 
-    loadMyTeams();
+    void loadMyTeams();
   }, []);
 
   async function refreshTournamentData() {
@@ -265,6 +267,10 @@ export default function TournamentDetailsPage() {
     return tournament.participants.map((participant) => participant.team);
   }, [tournament]);
 
+  const isOwner = Boolean(
+    currentUser && tournament && currentUser.id === tournament.owner_id,
+  );
+
   return (
     <main>
       <div className="page-header">
@@ -328,6 +334,12 @@ export default function TournamentDetailsPage() {
             </div>
           </div>
 
+          {!isLoadingCurrentUser && !isOwner ? (
+            <Alert variant="info" title="Read-only mode">
+              You are not the owner of this tournament, so management actions are hidden.
+            </Alert>
+          ) : null}
+
           <div className="grid grid-2" style={{ marginBottom: "24px" }}>
             <section>
               <h2>General info</h2>
@@ -363,31 +375,40 @@ export default function TournamentDetailsPage() {
                 Tournament owner can switch status directly from this page.
               </p>
 
-              <div className="form-group">
-                <label htmlFor="tournament-status-select">Status</label>
-                <select
-                  id="tournament-status-select"
-                  value={tournament.status}
-                  onChange={(event) =>
-                    handleStatusChange(
-                      event.target.value as TournamentStatus,
-                    )
-                  }
-                  disabled={isUpdatingStatus}
-                >
-                  {STATUS_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {isOwner ? (
+                <>
+                  <div className="form-group">
+                    <label htmlFor="tournament-status-select">Status</label>
+                    <select
+                      id="tournament-status-select"
+                      value={tournament.status}
+                      onChange={(event) =>
+                        handleStatusChange(
+                          event.target.value as TournamentStatus,
+                        )
+                      }
+                      disabled={isUpdatingStatus}
+                    >
+                      {STATUS_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-              {statusError ? (
-                <Alert variant="error" title="Status update failed">
-                  {statusError}
-                </Alert>
-              ) : null}
+                  {statusError ? (
+                    <Alert variant="error" title="Status update failed">
+                      {statusError}
+                    </Alert>
+                  ) : null}
+                </>
+              ) : (
+                <EmptyState
+                  title="Owner action only"
+                  description="Only the tournament owner can change tournament status."
+                />
+              )}
             </section>
           </div>
 
@@ -482,15 +503,17 @@ export default function TournamentDetailsPage() {
                           Open team
                         </Link>
 
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveTeam(participant.team_id)}
-                          disabled={isRemovingTeamId === participant.team_id}
-                        >
-                          {isRemovingTeamId === participant.team_id
-                            ? "Removing..."
-                            : "Remove"}
-                        </button>
+                        {isOwner ? (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveTeam(participant.team_id)}
+                            disabled={isRemovingTeamId === participant.team_id}
+                          >
+                            {isRemovingTeamId === participant.team_id
+                              ? "Removing..."
+                              : "Remove"}
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   ))}
@@ -507,7 +530,12 @@ export default function TournamentDetailsPage() {
                 tournament.
               </p>
 
-              {participantTeams.length < 2 ? (
+              {!isOwner ? (
+                <EmptyState
+                  title="Owner action only"
+                  description="Only the tournament owner can create matches for this tournament."
+                />
+              ) : participantTeams.length < 2 ? (
                 <EmptyState
                   title="Not enough teams"
                   description="At least two registered teams are required before creating a match."
