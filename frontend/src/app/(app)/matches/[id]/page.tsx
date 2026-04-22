@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import {
   deleteMatch,
@@ -12,10 +12,18 @@ import {
   type MatchRead,
 } from "@/src/shared/api/matches";
 import { getAccessToken } from "@/src/shared/lib/auth";
-import Alert from "@/src/components/ui/alert";
-import StatusBadge from "@/src/components/ui/status-badge";
-import EmptyState from "@/src/components/ui/empty-state";
 import { useCurrentUser } from "@/src/hooks/use-current-user";
+
+import Alert from "@/src/components/ui/alert";
+import EmptyState from "@/src/components/ui/empty-state";
+import StatusBadge from "@/src/components/ui/status-badge";
+
+const MATCH_STATUS_OPTIONS = [
+  "SCHEDULED",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "CANCELLED",
+] as const;
 
 function formatDate(value: string | null): string {
   if (!value) return "Not specified";
@@ -26,37 +34,49 @@ function formatDate(value: string | null): string {
   return date.toLocaleString();
 }
 
-const MATCH_STATUS_OPTIONS = [
-  "SCHEDULED",
-  "IN_PROGRESS",
-  "COMPLETED",
-  "CANCELLED",
-];
+function formatDateTimeLocal(value: string | null): string {
+  if (!value) return "";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function getNumericValue(value: string): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
 export default function MatchDetailsPage() {
   const params = useParams();
   const router = useRouter();
   const matchId = useMemo(() => Number(params?.id), [params]);
+
   const { user: currentUser, isLoading: isLoadingCurrentUser } = useCurrentUser();
 
   const [match, setMatch] = useState<MatchRead | null>(null);
-  const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
   const [homeScore, setHomeScore] = useState("0");
   const [awayScore, setAwayScore] = useState("0");
-  const [winnerTeamId, setWinnerTeamId] = useState("");
+
+  const [statusValue, setStatusValue] = useState("");
+  const [scheduledAtValue, setScheduledAtValue] = useState("");
 
   const [scoreError, setScoreError] = useState("");
   const [scoreSuccess, setScoreSuccess] = useState("");
   const [isUpdatingScore, setIsUpdatingScore] = useState(false);
 
-  const [statusValue, setStatusValue] = useState("");
-  const [scheduledAtValue, setScheduledAtValue] = useState("");
-
   const [updateError, setUpdateError] = useState("");
   const [updateSuccess, setUpdateSuccess] = useState("");
   const [isUpdatingMatch, setIsUpdatingMatch] = useState(false);
+
+  const [quickActionError, setQuickActionError] = useState("");
+  const [quickActionSuccess, setQuickActionSuccess] = useState("");
+  const [isRunningQuickAction, setIsRunningQuickAction] = useState(false);
 
   const [deleteError, setDeleteError] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
@@ -64,28 +84,25 @@ export default function MatchDetailsPage() {
   useEffect(() => {
     async function loadMatch() {
       if (!Number.isFinite(matchId)) {
-        setError("Invalid match id");
+        setLoadError("Invalid match id");
         setIsLoading(false);
         return;
       }
 
       try {
-        setError("");
+        setLoadError("");
         setIsLoading(true);
 
         const data = await getMatch(matchId);
         setMatch(data);
         setHomeScore(String(data.home_score ?? 0));
         setAwayScore(String(data.away_score ?? 0));
-        setWinnerTeamId(data.winner_team_id ? String(data.winner_team_id) : "");
         setStatusValue(data.status);
-        setScheduledAtValue(
-          data.scheduled_at
-            ? new Date(data.scheduled_at).toISOString().slice(0, 16)
-            : "",
+        setScheduledAtValue(formatDateTimeLocal(data.scheduled_at));
+      } catch (error) {
+        setLoadError(
+          error instanceof Error ? error.message : "Failed to load match",
         );
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load match");
       } finally {
         setIsLoading(false);
       }
@@ -94,12 +111,48 @@ export default function MatchDetailsPage() {
     void loadMatch();
   }, [matchId]);
 
-  async function handleScoreSubmit(event: React.FormEvent<HTMLFormElement>) {
+  const isOwner = Boolean(
+    currentUser && match && currentUser.id === match.tournament.owner_id,
+  );
+
+  const numericHomeScore = useMemo(() => getNumericValue(homeScore), [homeScore]);
+  const numericAwayScore = useMemo(() => getNumericValue(awayScore), [awayScore]);
+
+  const derivedWinner = useMemo(() => {
+    if (!match) return null;
+    if (numericHomeScore > numericAwayScore) return match.home_team;
+    if (numericAwayScore > numericHomeScore) return match.away_team;
+    return null;
+  }, [match, numericHomeScore, numericAwayScore]);
+
+  const hasScoreDifference = numericHomeScore !== numericAwayScore;
+  const canCompleteMatch = hasScoreDifference && numericHomeScore >= 0 && numericAwayScore >= 0;
+
+  async function refreshMatch(): Promise<void> {
+    const data = await getMatch(matchId);
+    setMatch(data);
+    setHomeScore(String(data.home_score ?? 0));
+    setAwayScore(String(data.away_score ?? 0));
+    setStatusValue(data.status);
+    setScheduledAtValue(formatDateTimeLocal(data.scheduled_at));
+  }
+
+  async function handleScoreSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const token = getAccessToken();
     if (!token) {
       setScoreError("You need to login before updating score");
+      return;
+    }
+
+    if (!match) {
+      setScoreError("Match is not loaded yet");
+      return;
+    }
+
+    if (numericHomeScore < 0 || numericAwayScore < 0) {
+      setScoreError("Score values cannot be negative");
       return;
     }
 
@@ -111,25 +164,25 @@ export default function MatchDetailsPage() {
       const updated = await updateMatchScore(
         matchId,
         {
-          home_score: Number(homeScore),
-          away_score: Number(awayScore),
-          winner_team_id: winnerTeamId ? Number(winnerTeamId) : null,
+          home_score: numericHomeScore,
+          away_score: numericAwayScore,
+          winner_team_id: derivedWinner ? derivedWinner.id : null,
         },
         token,
       );
 
       setMatch(updated);
       setScoreSuccess("Score updated successfully");
-    } catch (err) {
+    } catch (error) {
       setScoreError(
-        err instanceof Error ? err.message : "Failed to update score",
+        error instanceof Error ? error.message : "Failed to update score",
       );
     } finally {
       setIsUpdatingScore(false);
     }
   }
 
-  async function handleMatchUpdate(event: React.FormEvent<HTMLFormElement>) {
+  async function handleMatchUpdate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const token = getAccessToken();
@@ -156,12 +209,108 @@ export default function MatchDetailsPage() {
 
       setMatch(updated);
       setUpdateSuccess("Match updated successfully");
-    } catch (err) {
+    } catch (error) {
       setUpdateError(
-        err instanceof Error ? err.message : "Failed to update match",
+        error instanceof Error ? error.message : "Failed to update match",
       );
     } finally {
       setIsUpdatingMatch(false);
+    }
+  }
+
+  async function handleQuickStatusChange(nextStatus: string) {
+    const token = getAccessToken();
+    if (!token) {
+      setQuickActionError("You need to login before changing match status");
+      return;
+    }
+
+    setQuickActionError("");
+    setQuickActionSuccess("");
+    setIsRunningQuickAction(true);
+
+    try {
+      const updated = await updateMatch(
+        matchId,
+        {
+          status: nextStatus,
+          scheduled_at: scheduledAtValue
+            ? new Date(scheduledAtValue).toISOString()
+            : null,
+        },
+        token,
+      );
+
+      setMatch(updated);
+      setStatusValue(updated.status);
+      setQuickActionSuccess(`Match status changed to ${updated.status}`);
+    } catch (error) {
+      setQuickActionError(
+        error instanceof Error ? error.message : "Failed to change match status",
+      );
+    } finally {
+      setIsRunningQuickAction(false);
+    }
+  }
+
+  async function handleCompleteMatch() {
+    const token = getAccessToken();
+    if (!token) {
+      setQuickActionError("You need to login before completing a match");
+      return;
+    }
+
+    if (!match) {
+      setQuickActionError("Match is not loaded yet");
+      return;
+    }
+
+    if (numericHomeScore < 0 || numericAwayScore < 0) {
+      setQuickActionError("Score values cannot be negative");
+      return;
+    }
+
+    if (!derivedWinner) {
+      setQuickActionError("Completed match must have a winner. Set different scores.");
+      return;
+    }
+
+    setQuickActionError("");
+    setQuickActionSuccess("");
+    setIsRunningQuickAction(true);
+
+    try {
+      await updateMatchScore(
+        matchId,
+        {
+          home_score: numericHomeScore,
+          away_score: numericAwayScore,
+          winner_team_id: derivedWinner.id,
+        },
+        token,
+      );
+
+      const updated = await updateMatch(
+        matchId,
+        {
+          status: "COMPLETED",
+          scheduled_at: scheduledAtValue
+            ? new Date(scheduledAtValue).toISOString()
+            : null,
+        },
+        token,
+      );
+
+      setMatch(updated);
+      setStatusValue(updated.status);
+      setQuickActionSuccess("Match completed successfully");
+      await refreshMatch();
+    } catch (error) {
+      setQuickActionError(
+        error instanceof Error ? error.message : "Failed to complete match",
+      );
+    } finally {
+      setIsRunningQuickAction(false);
     }
   }
 
@@ -176,9 +325,7 @@ export default function MatchDetailsPage() {
       "Are you sure you want to delete this match?",
     );
 
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     setDeleteError("");
     setIsDeleting(true);
@@ -186,56 +333,51 @@ export default function MatchDetailsPage() {
     try {
       await deleteMatch(matchId, token);
       router.push("/matches");
-    } catch (err) {
+    } catch (error) {
       setDeleteError(
-        err instanceof Error ? err.message : "Failed to delete match",
+        error instanceof Error ? error.message : "Failed to delete match",
       );
       setIsDeleting(false);
     }
   }
 
-  const isOwner = Boolean(
-    currentUser && match && currentUser.id === match.tournament.owner_id,
-  );
-
   return (
-    <main>
-      <div className="page-header">
-        <div>
-          <span className="badge">Match details</span>
-          <h1 className="page-title" style={{ marginTop: "14px" }}>
-            {match ? `${match.home_team.name} vs ${match.away_team.name}` : "Match"}
-          </h1>
-          <p className="page-subtitle">
-            Inspect metadata, update score and manage match lifecycle.
-          </p>
-        </div>
+    <main className="page">
+      <section className="page-hero">
+        <p className="eyebrow">Match details</p>
+        <h1>
+          {match ? `${match.home_team.name} vs ${match.away_team.name}` : "Match"}
+        </h1>
+        <p>
+          Inspect the match, control its lifecycle and confirm the final result
+          from one place.
+        </p>
 
-        <div className="row">
+        <div className="row" style={{ marginTop: "16px", flexWrap: "wrap" }}>
           <Link href="/matches" className="btn btn-secondary">
             Back to matches
           </Link>
           {match ? (
             <Link
-              href={`/tournaments/${match.tournament_id}`}
+              href={`/tournaments/${match.tournament.id}`}
               className="btn btn-secondary"
             >
               Open tournament
             </Link>
           ) : null}
         </div>
-      </div>
+      </section>
 
       {isLoading ? (
-        <section>
+        <section className="card">
           <h2>Loading match...</h2>
           <p>Please wait while we fetch match details.</p>
         </section>
       ) : null}
 
-      {!isLoading && error ? (
+      {!isLoading && loadError ? (
         <Alert variant="error" title="Failed to load match">
-          {error}
+          {loadError}
         </Alert>
       ) : null}
 
@@ -243,38 +385,46 @@ export default function MatchDetailsPage() {
         <>
           {!isLoadingCurrentUser && !isOwner ? (
             <Alert variant="info" title="Read-only mode">
-              You are not the owner of the tournament for this match, so edit actions are hidden.
+              You are not the owner of the tournament for this match, so edit
+              actions are hidden.
             </Alert>
           ) : null}
 
-          <div className="grid grid-3" style={{ marginBottom: "24px" }}>
-            <div className="card stat-card">
-              <div className="stat-label">Status</div>
-              <div className="stat-value">
-                <StatusBadge value={match.status} />
-              </div>
+          <section
+            className="grid grid-2"
+            style={{ alignItems: "stretch", marginBottom: "24px" }}
+          >
+            <div className="card">
+              <p className="muted">Status</p>
+              <StatusBadge value={match.status} />
             </div>
 
-            <div className="card stat-card">
-              <div className="stat-label">Score</div>
-              <div className="stat-value">
+            <div className="card">
+              <p className="muted">Score</p>
+              <strong>
                 {match.home_score ?? "-"} : {match.away_score ?? "-"}
-              </div>
+              </strong>
             </div>
 
-            <div className="card stat-card">
-              <div className="stat-label">Winner</div>
-              <div className="stat-value">
-                {match.winner_team?.name ?? "Not set"}
-              </div>
+            <div className="card">
+              <p className="muted">Winner</p>
+              <strong>{match.winner_team?.name ?? "Not decided"}</strong>
             </div>
-          </div>
 
-          <div className="grid grid-2" style={{ marginBottom: "24px" }}>
-            <section>
+            <div className="card">
+              <p className="muted">Scheduled at</p>
+              <strong>{formatDate(match.scheduled_at)}</strong>
+            </div>
+          </section>
+
+          <section
+            className="grid grid-2"
+            style={{ alignItems: "start", marginBottom: "24px" }}
+          >
+            <div className="card">
               <h2>General info</h2>
 
-              <div className="grid" style={{ marginTop: "18px" }}>
+              <div className="grid" style={{ gap: "14px", marginTop: "16px" }}>
                 <div>
                   <p className="muted">Tournament</p>
                   <strong>{match.tournament.name}</strong>
@@ -291,24 +441,89 @@ export default function MatchDetailsPage() {
                 </div>
 
                 <div>
-                  <p className="muted">Scheduled at</p>
-                  <strong>{formatDate(match.scheduled_at)}</strong>
+                  <p className="muted">Derived winner from form</p>
+                  <strong>{derivedWinner?.name ?? "No winner yet"}</strong>
                 </div>
               </div>
-            </section>
+            </div>
 
-            <section>
+            <div className="card">
+              <h2>Quick actions</h2>
+              <p style={{ marginBottom: "16px" }}>
+                Use fast actions to move the match through its lifecycle.
+              </p>
+
+              {!isOwner ? (
+                <EmptyState
+                  title="Owner access required"
+                  description="Only the tournament owner can manage this match."
+                />
+              ) : (
+                <>
+                  {quickActionError ? (
+                    <Alert variant="error" title="Quick action failed">
+                      {quickActionError}
+                    </Alert>
+                  ) : null}
+
+                  {quickActionSuccess ? (
+                    <Alert variant="success" title="Quick action completed">
+                      {quickActionSuccess}
+                    </Alert>
+                  ) : null}
+
+                  <div className="row" style={{ flexWrap: "wrap", gap: "10px" }}>
+                    <button
+                      type="button"
+                      onClick={() => void handleQuickStatusChange("IN_PROGRESS")}
+                      disabled={isRunningQuickAction}
+                    >
+                      Start match
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleCompleteMatch()}
+                      disabled={isRunningQuickAction || !canCompleteMatch}
+                    >
+                      Complete match
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleQuickStatusChange("CANCELLED")}
+                      disabled={isRunningQuickAction}
+                    >
+                      Cancel match
+                    </button>
+                  </div>
+
+                  <p className="muted" style={{ marginTop: "14px" }}>
+                    To complete a match, set different scores so the winner can
+                    be determined automatically.
+                  </p>
+                </>
+              )}
+            </div>
+          </section>
+
+          <section
+            className="grid grid-2"
+            style={{ alignItems: "start", marginBottom: "24px" }}
+          >
+            <div className="card">
               <h2>Update score</h2>
 
               {isOwner ? (
                 <form onSubmit={handleScoreSubmit}>
                   <div className="grid grid-2">
                     <div className="form-group">
-                      <label htmlFor="home-score">Home score</label>
+                      <label htmlFor="home-score">{match.home_team.name}</label>
                       <input
                         id="home-score"
                         type="number"
-                        min={0}
+                        min="0"
+                        step="1"
                         value={homeScore}
                         onChange={(event) => setHomeScore(event.target.value)}
                         required
@@ -316,11 +531,12 @@ export default function MatchDetailsPage() {
                     </div>
 
                     <div className="form-group">
-                      <label htmlFor="away-score">Away score</label>
+                      <label htmlFor="away-score">{match.away_team.name}</label>
                       <input
                         id="away-score"
                         type="number"
-                        min={0}
+                        min="0"
+                        step="1"
                         value={awayScore}
                         onChange={(event) => setAwayScore(event.target.value)}
                         required
@@ -328,17 +544,14 @@ export default function MatchDetailsPage() {
                     </div>
                   </div>
 
-                  <div className="form-group">
-                    <label htmlFor="winner-team">Winner team</label>
-                    <select
-                      id="winner-team"
-                      value={winnerTeamId}
-                      onChange={(event) => setWinnerTeamId(event.target.value)}
-                    >
-                      <option value="">No winner</option>
-                      <option value={match.home_team.id}>{match.home_team.name}</option>
-                      <option value={match.away_team.id}>{match.away_team.name}</option>
-                    </select>
+                  <div className="card" style={{ padding: "16px", marginTop: "12px" }}>
+                    <p className="muted">Result preview</p>
+                    <strong>
+                      {numericHomeScore} : {numericAwayScore}
+                    </strong>
+                    <p style={{ marginTop: "8px" }}>
+                      Winner: {derivedWinner?.name ?? "No winner yet"}
+                    </p>
                   </div>
 
                   {scoreError ? (
@@ -353,21 +566,21 @@ export default function MatchDetailsPage() {
                     </Alert>
                   ) : null}
 
-                  <button type="submit" disabled={isUpdatingScore}>
-                    {isUpdatingScore ? "Updating..." : "Update score"}
-                  </button>
+                  <div className="row" style={{ marginTop: "16px" }}>
+                    <button type="submit" disabled={isUpdatingScore}>
+                      {isUpdatingScore ? "Updating..." : "Save score"}
+                    </button>
+                  </div>
                 </form>
               ) : (
                 <EmptyState
-                  title="Owner action only"
-                  description="Only the tournament owner can update match score."
+                  title="Owner access required"
+                  description="Only the tournament owner can update the score."
                 />
               )}
-            </section>
-          </div>
+            </div>
 
-          <div className="grid grid-2" style={{ marginBottom: "24px" }}>
-            <section>
+            <div className="card">
               <h2>Update match</h2>
 
               {isOwner ? (
@@ -409,48 +622,46 @@ export default function MatchDetailsPage() {
                     </Alert>
                   ) : null}
 
-                  <button type="submit" disabled={isUpdatingMatch}>
-                    {isUpdatingMatch ? "Saving..." : "Save changes"}
-                  </button>
+                  <div className="row" style={{ marginTop: "16px" }}>
+                    <button type="submit" disabled={isUpdatingMatch}>
+                      {isUpdatingMatch ? "Saving..." : "Save changes"}
+                    </button>
+                  </div>
                 </form>
               ) : (
                 <EmptyState
-                  title="Owner action only"
-                  description="Only the tournament owner can edit this match."
+                  title="Owner access required"
+                  description="Only the tournament owner can update status and schedule."
                 />
               )}
-            </section>
+            </div>
+          </section>
 
-            <section>
-              <h2>Danger zone</h2>
-              <p style={{ marginBottom: "18px" }}>
-                Deleting a match removes it permanently.
-              </p>
+          <section className="card">
+            <h2>Danger zone</h2>
+            <p>Deleting a match removes it permanently.</p>
 
-              {isOwner ? (
-                <>
-                  {deleteError ? (
-                    <Alert variant="error" title="Delete failed">
-                      {deleteError}
-                    </Alert>
-                  ) : null}
+            {isOwner ? (
+              <>
+                {deleteError ? (
+                  <Alert variant="error" title="Delete failed">
+                    {deleteError}
+                  </Alert>
+                ) : null}
 
-                  <button
-                    type="button"
-                    onClick={handleDeleteMatch}
-                    disabled={isDeleting}
-                  >
+                <div className="row" style={{ marginTop: "16px" }}>
+                  <button type="button" onClick={handleDeleteMatch} disabled={isDeleting}>
                     {isDeleting ? "Deleting..." : "Delete match"}
                   </button>
-                </>
-              ) : (
-                <EmptyState
-                  title="Owner action only"
-                  description="Only the tournament owner can delete this match."
-                />
-              )}
-            </section>
-          </div>
+                </div>
+              </>
+            ) : (
+              <EmptyState
+                title="Owner access required"
+                description="Only the tournament owner can delete this match."
+              />
+            )}
+          </section>
         </>
       ) : null}
     </main>

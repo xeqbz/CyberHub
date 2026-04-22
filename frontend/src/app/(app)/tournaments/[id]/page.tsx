@@ -2,10 +2,18 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
-import { listMyTeams, type TeamRead } from "@/src/shared/api/teams";
-import { createMatch, listTournamentMatches, type MatchRead } from "@/src/shared/api/matches";
+import { useCurrentUser } from "@/src/hooks/use-current-user";
+import {
+  createMatch,
+  listTournamentMatches,
+  type MatchRead,
+} from "@/src/shared/api/matches";
+import {
+  listMyTeams,
+  type TeamRead,
+} from "@/src/shared/api/teams";
 import {
   getTournament,
   registerTeamForTournament,
@@ -15,10 +23,10 @@ import {
   type TournamentStatus,
 } from "@/src/shared/api/tournaments";
 import { getAccessToken } from "@/src/shared/lib/auth";
+
 import Alert from "@/src/components/ui/alert";
 import EmptyState from "@/src/components/ui/empty-state";
 import StatusBadge from "@/src/components/ui/status-badge";
-import { useCurrentUser } from "@/src/hooks/use-current-user";
 
 const STATUS_OPTIONS: TournamentStatus[] = [
   "DRAFT",
@@ -38,19 +46,45 @@ function formatDate(value: string | null): string {
   return date.toLocaleString();
 }
 
+function formatDateTimeLocal(value: string | null): string {
+  if (!value) return "";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function sortMatches(matches: MatchRead[]): MatchRead[] {
+  return [...matches].sort((a, b) => {
+    if (a.scheduled_at && b.scheduled_at) {
+      return (
+        new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
+      );
+    }
+
+    if (a.scheduled_at && !b.scheduled_at) return -1;
+    if (!a.scheduled_at && b.scheduled_at) return 1;
+
+    return b.id - a.id;
+  });
+}
+
 export default function TournamentDetailsPage() {
   const params = useParams();
   const tournamentId = useMemo(() => Number(params?.id), [params]);
+
   const { user: currentUser, isLoading: isLoadingCurrentUser } = useCurrentUser();
 
   const [tournament, setTournament] = useState<TournamentRead | null>(null);
   const [tournamentMatches, setTournamentMatches] = useState<MatchRead[]>([]);
   const [myTeams, setMyTeams] = useState<TeamRead[]>([]);
-  const [selectedTeamId, setSelectedTeamId] = useState("");
 
-  const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [pageError, setPageError] = useState("");
 
+  const [selectedTeamId, setSelectedTeamId] = useState("");
   const [registerError, setRegisterError] = useState("");
   const [registerSuccess, setRegisterSuccess] = useState("");
   const [isRegistering, setIsRegistering] = useState(false);
@@ -59,9 +93,9 @@ export default function TournamentDetailsPage() {
   const [isRemovingTeamId, setIsRemovingTeamId] = useState<number | null>(null);
 
   const [statusError, setStatusError] = useState("");
+  const [statusSuccess, setStatusSuccess] = useState("");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
-  const [matchesError, setMatchesError] = useState("");
   const [homeTeamId, setHomeTeamId] = useState("");
   const [awayTeamId, setAwayTeamId] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
@@ -72,14 +106,13 @@ export default function TournamentDetailsPage() {
   useEffect(() => {
     async function loadTournamentData() {
       if (!Number.isFinite(tournamentId)) {
-        setError("Invalid tournament id");
+        setPageError("Invalid tournament id");
         setIsLoading(false);
         return;
       }
 
       try {
-        setError("");
-        setMatchesError("");
+        setPageError("");
         setIsLoading(true);
 
         const [tournamentData, matchesData] = await Promise.all([
@@ -89,9 +122,9 @@ export default function TournamentDetailsPage() {
 
         setTournament(tournamentData);
         setTournamentMatches(matchesData);
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to load tournament",
+      } catch (error) {
+        setPageError(
+          error instanceof Error ? error.message : "Failed to load tournament",
         );
       } finally {
         setIsLoading(false);
@@ -110,14 +143,14 @@ export default function TournamentDetailsPage() {
         const data = await listMyTeams(token);
         setMyTeams(data);
       } catch {
-        // page can still work without this block
+        // page stays usable even if this block fails
       }
     }
 
     void loadMyTeams();
   }, []);
 
-  async function refreshTournamentData() {
+  async function refreshTournamentData(): Promise<void> {
     if (!Number.isFinite(tournamentId)) return;
 
     const [tournamentData, matchesData] = await Promise.all([
@@ -129,11 +162,10 @@ export default function TournamentDetailsPage() {
     setTournamentMatches(matchesData);
   }
 
-  async function handleRegisterTeam(event: React.FormEvent<HTMLFormElement>) {
+  async function handleRegisterTeam(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const token = getAccessToken();
-
     if (!token) {
       setRegisterError("You need to login before registering a team");
       return;
@@ -153,9 +185,9 @@ export default function TournamentDetailsPage() {
       setRegisterSuccess("Team registered successfully");
       setSelectedTeamId("");
       await refreshTournamentData();
-    } catch (err) {
+    } catch (error) {
       setRegisterError(
-        err instanceof Error ? err.message : "Failed to register team",
+        error instanceof Error ? error.message : "Failed to register team",
       );
     } finally {
       setIsRegistering(false);
@@ -164,7 +196,6 @@ export default function TournamentDetailsPage() {
 
   async function handleRemoveTeam(teamId: number) {
     const token = getAccessToken();
-
     if (!token) {
       setRemoveError("You need to login before removing a participant");
       return;
@@ -176,9 +207,9 @@ export default function TournamentDetailsPage() {
     try {
       await removeTeamFromTournament(tournamentId, teamId, token);
       await refreshTournamentData();
-    } catch (err) {
+    } catch (error) {
       setRemoveError(
-        err instanceof Error ? err.message : "Failed to remove team",
+        error instanceof Error ? error.message : "Failed to remove team",
       );
     } finally {
       setIsRemovingTeamId(null);
@@ -187,13 +218,13 @@ export default function TournamentDetailsPage() {
 
   async function handleStatusChange(nextStatus: TournamentStatus) {
     const token = getAccessToken();
-
     if (!token) {
       setStatusError("You need to login before updating tournament status");
       return;
     }
 
     setStatusError("");
+    setStatusSuccess("");
     setIsUpdatingStatus(true);
 
     try {
@@ -202,21 +233,22 @@ export default function TournamentDetailsPage() {
         { status: nextStatus },
         token,
       );
+
       setTournament(updated);
-    } catch (err) {
+      setStatusSuccess(`Tournament status updated to ${updated.status}`);
+    } catch (error) {
       setStatusError(
-        err instanceof Error ? err.message : "Failed to update status",
+        error instanceof Error ? error.message : "Failed to update status",
       );
     } finally {
       setIsUpdatingStatus(false);
     }
   }
 
-  async function handleCreateMatch(event: React.FormEvent<HTMLFormElement>) {
+  async function handleCreateMatch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const token = getAccessToken();
-
     if (!token) {
       setCreateMatchError("You need to login before creating a match");
       return;
@@ -242,7 +274,9 @@ export default function TournamentDetailsPage() {
           tournament_id: tournamentId,
           home_team_id: Number(homeTeamId),
           away_team_id: Number(awayTeamId),
-          scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
+          scheduled_at: scheduledAt
+            ? new Date(scheduledAt).toISOString()
+            : null,
         },
         token,
       );
@@ -253,9 +287,9 @@ export default function TournamentDetailsPage() {
       setScheduledAt("");
 
       await refreshTournamentData();
-    } catch (err) {
+    } catch (error) {
       setCreateMatchError(
-        err instanceof Error ? err.message : "Failed to create match",
+        error instanceof Error ? error.message : "Failed to create match",
       );
     } finally {
       setIsCreatingMatch(false);
@@ -267,25 +301,50 @@ export default function TournamentDetailsPage() {
     return tournament.participants.map((participant) => participant.team);
   }, [tournament]);
 
+  const participantTeamIds = useMemo(() => {
+    return new Set(participantTeams.map((team) => team.id));
+  }, [participantTeams]);
+
+  const availableMyTeams = useMemo(() => {
+    return myTeams.filter((team) => !participantTeamIds.has(team.id));
+  }, [myTeams, participantTeamIds]);
+
+  const sortedMatches = useMemo(() => {
+    return sortMatches(tournamentMatches);
+  }, [tournamentMatches]);
+
+  const completedMatchesCount = useMemo(() => {
+    return tournamentMatches.filter((match) => match.status === "COMPLETED").length;
+  }, [tournamentMatches]);
+
+  const scheduledMatchesCount = useMemo(() => {
+    return tournamentMatches.filter((match) => match.status !== "COMPLETED").length;
+  }, [tournamentMatches]);
+
   const isOwner = Boolean(
     currentUser && tournament && currentUser.id === tournament.owner_id,
   );
 
-  return (
-    <main>
-      <div className="page-header">
-        <div>
-          <span className="badge">Tournament details</span>
-          <h1 className="page-title" style={{ marginTop: "14px" }}>
-            {tournament?.name ?? "Tournament"}
-          </h1>
-          <p className="page-subtitle">
-            Inspect tournament metadata, participants, registration flow and
-            matches.
-          </p>
-        </div>
+  const isRegistrationOpen = tournament?.status === "REGISTRATION_OPEN";
+  const isTournamentLocked =
+    tournament?.status === "COMPLETED" || tournament?.status === "CANCELLED";
 
-        <div className="row">
+  const canCreateMatch =
+    isOwner &&
+    !isTournamentLocked &&
+    participantTeams.length >= 2;
+
+  return (
+    <main className="page">
+      <section className="page-hero">
+        <p className="eyebrow">Tournament details</p>
+        <h1>{tournament?.name ?? "Tournament"}</h1>
+        <p>
+          Manage participants, schedule matches and keep the tournament state in
+          one place.
+        </p>
+
+        <div className="row" style={{ marginTop: "16px", flexWrap: "wrap" }}>
           <Link href="/tournaments" className="btn btn-secondary">
             Back to tournaments
           </Link>
@@ -296,55 +355,75 @@ export default function TournamentDetailsPage() {
             Teams
           </Link>
         </div>
-      </div>
+      </section>
 
       {isLoading ? (
-        <section>
+        <section className="card">
           <h2>Loading tournament...</h2>
           <p>Please wait while we fetch tournament details.</p>
         </section>
       ) : null}
 
-      {!isLoading && error ? (
+      {!isLoading && pageError ? (
         <Alert variant="error" title="Failed to load tournament">
-          {error}
+          {pageError}
         </Alert>
       ) : null}
 
       {!isLoading && tournament ? (
         <>
-          <div className="grid grid-3" style={{ marginBottom: "24px" }}>
-            <div className="card stat-card">
-              <div className="stat-label">Tournament ID</div>
-              <div className="stat-value">{tournament.id}</div>
+          <section
+            className="grid grid-2"
+            style={{ alignItems: "stretch", marginBottom: "24px" }}
+          >
+            <div className="card">
+              <p className="muted">Tournament ID</p>
+              <strong>{tournament.id}</strong>
             </div>
 
-            <div className="card stat-card">
-              <div className="stat-label">Status</div>
-              <div className="stat-value">
-                <StatusBadge value={tournament.status} />
-              </div>
+            <div className="card">
+              <p className="muted">Status</p>
+              <StatusBadge value={tournament.status} />
             </div>
 
-            <div className="card stat-card">
-              <div className="stat-label">Participants</div>
-              <div className="stat-value">
+            <div className="card">
+              <p className="muted">Participants</p>
+              <strong>
                 {tournament.participants.length}/{tournament.max_teams}
-              </div>
+              </strong>
             </div>
-          </div>
+
+            <div className="card">
+              <p className="muted">Starts at</p>
+              <strong>{formatDate(tournament.starts_at)}</strong>
+            </div>
+
+            <div className="card">
+              <p className="muted">Owner</p>
+              <strong>{tournament.owner.username}</strong>
+            </div>
+
+            <div className="card">
+              <p className="muted">Matches</p>
+              <strong>{tournamentMatches.length}</strong>
+            </div>
+          </section>
 
           {!isLoadingCurrentUser && !isOwner ? (
             <Alert variant="info" title="Read-only mode">
-              You are not the owner of this tournament, so management actions are hidden.
+              You are not the owner of this tournament, so management actions are
+              limited. You can still inspect participants and matches.
             </Alert>
           ) : null}
 
-          <div className="grid grid-2" style={{ marginBottom: "24px" }}>
-            <section>
+          <section
+            className="grid grid-2"
+            style={{ alignItems: "start", marginBottom: "24px" }}
+          >
+            <div className="card">
               <h2>General info</h2>
 
-              <div className="grid" style={{ marginTop: "18px" }}>
+              <div className="grid" style={{ gap: "14px", marginTop: "16px" }}>
                 <div>
                   <p className="muted">Name</p>
                   <strong>{tournament.name}</strong>
@@ -352,90 +431,112 @@ export default function TournamentDetailsPage() {
 
                 <div>
                   <p className="muted">Description</p>
-                  <strong>
-                    {tournament.description || "No description provided"}
-                  </strong>
+                  <p>{tournament.description || "No description provided."}</p>
                 </div>
 
                 <div>
                   <p className="muted">Starts at</p>
-                  <strong>{formatDate(tournament.starts_at)}</strong>
+                  <p>{formatDate(tournament.starts_at)}</p>
                 </div>
 
                 <div>
-                  <p className="muted">Owner</p>
-                  <strong>{tournament.owner.username}</strong>
+                  <p className="muted">Registration state</p>
+                  <p>
+                    {isRegistrationOpen
+                      ? "Teams can join right now."
+                      : "Registration is currently closed."}
+                  </p>
                 </div>
               </div>
-            </section>
+            </div>
 
-            <section>
-              <h2>Status management</h2>
-              <p style={{ marginBottom: "18px" }}>
-                Tournament owner can switch status directly from this page.
-              </p>
+            <div className="card">
+              <h2>Match overview</h2>
 
-              {isOwner ? (
-                <>
-                  <div className="form-group">
-                    <label htmlFor="tournament-status-select">Status</label>
-                    <select
-                      id="tournament-status-select"
-                      value={tournament.status}
-                      onChange={(event) =>
-                        handleStatusChange(
-                          event.target.value as TournamentStatus,
-                        )
-                      }
-                      disabled={isUpdatingStatus}
-                    >
-                      {STATUS_OPTIONS.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+              <div
+                className="grid grid-2"
+                style={{ marginTop: "16px", gap: "12px" }}
+              >
+                <div className="card" style={{ padding: "16px" }}>
+                  <p className="muted">Total matches</p>
+                  <strong>{tournamentMatches.length}</strong>
+                </div>
 
-                  {statusError ? (
-                    <Alert variant="error" title="Status update failed">
-                      {statusError}
-                    </Alert>
-                  ) : null}
-                </>
-              ) : (
-                <EmptyState
-                  title="Owner action only"
-                  description="Only the tournament owner can change tournament status."
-                />
-              )}
-            </section>
-          </div>
+                <div className="card" style={{ padding: "16px" }}>
+                  <p className="muted">Completed</p>
+                  <strong>{completedMatchesCount}</strong>
+                </div>
 
-          <div className="grid grid-2" style={{ marginBottom: "24px" }}>
-            <section>
+                <div className="card" style={{ padding: "16px" }}>
+                  <p className="muted">Pending</p>
+                  <strong>{scheduledMatchesCount}</strong>
+                </div>
+
+                <div className="card" style={{ padding: "16px" }}>
+                  <p className="muted">Available slots</p>
+                  <strong>
+                    {Math.max(tournament.max_teams - tournament.participants.length, 0)}
+                  </strong>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section
+            className="grid grid-2"
+            style={{ alignItems: "start", marginBottom: "24px" }}
+          >
+            <div className="card">
               <h2>Register team</h2>
-              <p style={{ marginBottom: "20px" }}>
-                You can register a team here when tournament status is
-                REGISTRATION_OPEN.
+              <p style={{ marginBottom: "16px" }}>
+                Use this block to register one of your teams when tournament
+                registration is open.
               </p>
 
-              {myTeams.length === 0 ? (
+              {!getAccessToken() ? (
                 <EmptyState
-                  title="No teams available"
-                  description="You have no teams available. Create one first on the Teams page."
+                  title="Login required"
+                  description="You need to login before registering a team."
+                  action={
+                    <div className="row">
+                      <Link href="/login" className="btn btn-secondary">
+                        Login
+                      </Link>
+                    </div>
+                  }
+                />
+              ) : !isRegistrationOpen ? (
+                <EmptyState
+                  title="Registration is closed"
+                  description="Change tournament status to REGISTRATION_OPEN to allow team registration."
+                />
+              ) : availableMyTeams.length === 0 ? (
+                <EmptyState
+                  title="No eligible teams"
+                  description={
+                    myTeams.length === 0
+                      ? "You do not have any teams yet."
+                      : "All of your teams are already registered in this tournament."
+                  }
+                  action={
+                    myTeams.length === 0 ? (
+                      <Link href="/teams" className="btn btn-secondary">
+                        Go to teams
+                      </Link>
+                    ) : undefined
+                  }
                 />
               ) : (
                 <form onSubmit={handleRegisterTeam}>
                   <div className="form-group">
-                    <label htmlFor="team-select">Select team</label>
+                    <label htmlFor="register-team-select">Select team</label>
                     <select
-                      id="team-select"
+                      id="register-team-select"
                       value={selectedTeamId}
                       onChange={(event) => setSelectedTeamId(event.target.value)}
                     >
                       <option value="">Choose team</option>
-                      {myTeams.map((team) => (
+                      {availableMyTeams.map((team) => (
                         <option key={team.id} value={team.id}>
                           {team.name}
                         </option>
@@ -455,98 +556,173 @@ export default function TournamentDetailsPage() {
                     </Alert>
                   ) : null}
 
-                  <button type="submit" disabled={isRegistering}>
-                    {isRegistering ? "Registering..." : "Register team"}
-                  </button>
+                  <div className="row" style={{ marginTop: "16px" }}>
+                    <button type="submit" disabled={isRegistering}>
+                      {isRegistering ? "Registering..." : "Register team"}
+                    </button>
+                  </div>
                 </form>
               )}
-            </section>
+            </div>
 
-            <section>
-              <h2>Participants</h2>
-              <p style={{ marginBottom: "20px" }}>
-                Current registered teams in this tournament.
-              </p>
-
-              {removeError ? (
-                <Alert variant="error" title="Remove failed">
-                  {removeError}
-                </Alert>
-              ) : null}
-
-              {tournament.participants.length === 0 ? (
-                <EmptyState
-                  title="No participants yet"
-                  description="No participants are registered in this tournament yet."
-                />
-              ) : (
-                <div className="grid">
-                  {tournament.participants.map((participant) => (
-                    <div key={participant.id} className="card">
-                      <div className="row" style={{ justifyContent: "space-between" }}>
-                        <div>
-                          <h3>{participant.team.name}</h3>
-                          <p>
-                            {participant.team.description ||
-                              "No team description provided."}
-                          </p>
-                        </div>
-
-                        <span className="badge">Team ID: {participant.team_id}</span>
-                      </div>
-
-                      <div className="row" style={{ marginTop: "16px" }}>
-                        <Link
-                          href={`/teams/${participant.team_id}`}
-                          className="btn btn-secondary"
-                        >
-                          Open team
-                        </Link>
-
-                        {isOwner ? (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveTeam(participant.team_id)}
-                            disabled={isRemovingTeamId === participant.team_id}
-                          >
-                            {isRemovingTeamId === participant.team_id
-                              ? "Removing..."
-                              : "Remove"}
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
-
-          <div className="grid grid-2" style={{ marginBottom: "24px" }}>
-            <section>
-              <h2>Create match for this tournament</h2>
-              <p style={{ marginBottom: "20px" }}>
-                Create a match using the teams that are already registered in this
-                tournament.
+            <div className="card">
+              <h2>Status management</h2>
+              <p style={{ marginBottom: "16px" }}>
+                Tournament owner can switch the state directly from this page.
               </p>
 
               {!isOwner ? (
                 <EmptyState
-                  title="Owner action only"
-                  description="Only the tournament owner can create matches for this tournament."
+                  title="Owner access required"
+                  description="Only the tournament owner can change its status."
+                />
+              ) : (
+                <>
+                  <div className="form-group">
+                    <label htmlFor="tournament-status-select">Status</label>
+                    <select
+                      id="tournament-status-select"
+                      value={tournament.status}
+                      onChange={(event) =>
+                        void handleStatusChange(
+                          event.target.value as TournamentStatus,
+                        )
+                      }
+                      disabled={isUpdatingStatus}
+                    >
+                      {STATUS_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {statusError ? (
+                    <Alert variant="error" title="Status update failed">
+                      {statusError}
+                    </Alert>
+                  ) : null}
+
+                  {statusSuccess ? (
+                    <Alert variant="success" title="Status updated">
+                      {statusSuccess}
+                    </Alert>
+                  ) : null}
+
+                  <p className="muted" style={{ marginTop: "14px" }}>
+                    Recommended flow: DRAFT → REGISTRATION_OPEN →
+                    REGISTRATION_CLOSED → IN_PROGRESS → COMPLETED.
+                  </p>
+                </>
+              )}
+            </div>
+          </section>
+
+          <section className="card" style={{ marginBottom: "24px" }}>
+            <div
+              className="row"
+              style={{ justifyContent: "space-between", alignItems: "center" }}
+            >
+              <div>
+                <h2>Participants</h2>
+                <p className="muted">Current registered teams in this tournament.</p>
+              </div>
+              <strong>
+                {tournament.participants.length}/{tournament.max_teams}
+              </strong>
+            </div>
+
+            {removeError ? (
+              <Alert variant="error" title="Participant removal failed">
+                {removeError}
+              </Alert>
+            ) : null}
+
+            {tournament.participants.length === 0 ? (
+              <EmptyState
+                title="No participants yet"
+                description="Teams will appear here after registration."
+              />
+            ) : (
+              <div className="grid" style={{ marginTop: "18px" }}>
+                {tournament.participants.map((participant) => (
+                  <div key={participant.id} className="card">
+                    <div
+                      className="row"
+                      style={{
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        gap: "12px",
+                      }}
+                    >
+                      <div>
+                        <h3>{participant.team.name}</h3>
+                        <p>
+                          {participant.team.description || "No team description provided."}
+                        </p>
+                        <p className="muted">Team ID: {participant.team_id}</p>
+                      </div>
+
+                      {isOwner ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleRemoveTeam(participant.team_id)}
+                          disabled={isRemovingTeamId === participant.team_id}
+                        >
+                          {isRemovingTeamId === participant.team_id
+                            ? "Removing..."
+                            : "Remove"}
+                        </button>
+                      ) : null}
+                    </div>
+
+                    <div className="row" style={{ marginTop: "12px" }}>
+                      <Link
+                        href={`/teams/${participant.team.id}`}
+                        className="btn btn-secondary"
+                      >
+                        Open team
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section
+            className="grid grid-2"
+            style={{ alignItems: "start", marginBottom: "24px" }}
+          >
+            <div className="card">
+              <h2>Create match</h2>
+              <p style={{ marginBottom: "16px" }}>
+                Create a match using teams already registered in this tournament.
+              </p>
+
+              {!isOwner ? (
+                <EmptyState
+                  title="Owner access required"
+                  description="Only the tournament owner can create tournament matches."
                 />
               ) : participantTeams.length < 2 ? (
                 <EmptyState
-                  title="Not enough teams"
-                  description="At least two registered teams are required before creating a match."
+                  title="Not enough participants"
+                  description="Register at least two teams before creating a match."
+                />
+              ) : isTournamentLocked ? (
+                <EmptyState
+                  title="Tournament is locked"
+                  description="You cannot create new matches after tournament completion or cancellation."
                 />
               ) : (
                 <form onSubmit={handleCreateMatch}>
                   <div className="grid grid-2">
                     <div className="form-group">
-                      <label htmlFor="home-team-id">Home team</label>
+                      <label htmlFor="match-home-team">Home team</label>
                       <select
-                        id="home-team-id"
+                        id="match-home-team"
                         value={homeTeamId}
                         onChange={(event) => setHomeTeamId(event.target.value)}
                       >
@@ -560,9 +736,9 @@ export default function TournamentDetailsPage() {
                     </div>
 
                     <div className="form-group">
-                      <label htmlFor="away-team-id">Away team</label>
+                      <label htmlFor="match-away-team">Away team</label>
                       <select
-                        id="away-team-id"
+                        id="match-away-team"
                         value={awayTeamId}
                         onChange={(event) => setAwayTeamId(event.target.value)}
                       >
@@ -577,9 +753,9 @@ export default function TournamentDetailsPage() {
                   </div>
 
                   <div className="form-group">
-                    <label htmlFor="scheduled-at">Scheduled at</label>
+                    <label htmlFor="match-scheduled-at">Scheduled at</label>
                     <input
-                      id="scheduled-at"
+                      id="match-scheduled-at"
                       type="datetime-local"
                       value={scheduledAt}
                       onChange={(event) => setScheduledAt(event.target.value)}
@@ -598,76 +774,119 @@ export default function TournamentDetailsPage() {
                     </Alert>
                   ) : null}
 
-                  <button type="submit" disabled={isCreatingMatch}>
-                    {isCreatingMatch ? "Creating..." : "Create match"}
-                  </button>
+                  <div className="row" style={{ marginTop: "16px" }}>
+                    <button type="submit" disabled={!canCreateMatch || isCreatingMatch}>
+                      {isCreatingMatch ? "Creating..." : "Create match"}
+                    </button>
+                  </div>
                 </form>
               )}
-            </section>
+            </div>
 
-            <section>
-              <h2>Tournament matches</h2>
-              <p style={{ marginBottom: "20px" }}>
-                Matches linked to this tournament.
-              </p>
+            <div className="card">
+              <h2>Quick organizer notes</h2>
 
-              {matchesError ? (
-                <Alert variant="error" title="Failed to load matches">
-                  {matchesError}
-                </Alert>
-              ) : null}
+              <div className="grid" style={{ gap: "12px", marginTop: "16px" }}>
+                <div className="card" style={{ padding: "16px" }}>
+                  <strong>1. Open registration</strong>
+                  <p className="muted" style={{ marginTop: "8px" }}>
+                    Switch status to REGISTRATION_OPEN while teams are joining.
+                  </p>
+                </div>
 
-              {tournamentMatches.length === 0 ? (
-                <EmptyState
-                  title="No matches yet"
-                  description="No matches have been created for this tournament yet."
-                />
-              ) : (
-                <div className="grid">
-                  {tournamentMatches.map((match) => (
-                    <div key={match.id} className="card">
-                      <div className="row" style={{ justifyContent: "space-between" }}>
-                        <div>
-                          <h3>
-                            {match.home_team.name} vs {match.away_team.name}
-                          </h3>
-                          <p>Scheduled: {formatDate(match.scheduled_at)}</p>
-                        </div>
+                <div className="card" style={{ padding: "16px" }}>
+                  <strong>2. Close registration</strong>
+                  <p className="muted" style={{ marginTop: "8px" }}>
+                    Move to REGISTRATION_CLOSED when the participant pool is final.
+                  </p>
+                </div>
 
-                        <StatusBadge value={match.status} />
+                <div className="card" style={{ padding: "16px" }}>
+                  <strong>3. Start tournament</strong>
+                  <p className="muted" style={{ marginTop: "8px" }}>
+                    Use IN_PROGRESS when matches begin and update match results as games end.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="card">
+            <div
+              className="row"
+              style={{ justifyContent: "space-between", alignItems: "center" }}
+            >
+              <div>
+                <h2>Tournament matches</h2>
+                <p className="muted">
+                  Matches linked to this tournament, sorted by schedule.
+                </p>
+              </div>
+
+              <Link href="/matches" className="btn btn-secondary">
+                Open all matches
+              </Link>
+            </div>
+
+            {sortedMatches.length === 0 ? (
+              <EmptyState
+                title="No matches yet"
+                description="Create the first match to start tournament play."
+              />
+            ) : (
+              <div className="grid" style={{ marginTop: "18px" }}>
+                {sortedMatches.map((match) => (
+                  <div key={match.id} className="card">
+                    <div
+                      className="row"
+                      style={{
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        gap: "12px",
+                      }}
+                    >
+                      <div>
+                        <h3>
+                          Match #{match.id}: {match.home_team.name} vs {match.away_team.name}
+                        </h3>
+                        <p className="muted">
+                          Scheduled: {formatDate(match.scheduled_at)}
+                        </p>
                       </div>
 
-                      <div
-                        className="grid grid-2"
-                        style={{ marginTop: "16px", gap: "12px" }}
-                      >
-                        <div>
-                          <p className="muted">Score</p>
-                          <strong>
-                            {match.home_score ?? "-"} : {match.away_score ?? "-"}
-                          </strong>
-                        </div>
+                      <StatusBadge value={match.status} />
+                    </div>
 
-                        <div>
-                          <p className="muted">Winner</p>
-                          <strong>{match.winner_team?.name ?? "Not decided"}</strong>
-                        </div>
+                    <div
+                      className="grid grid-2"
+                      style={{ marginTop: "16px", gap: "12px" }}
+                    >
+                      <div>
+                        <p className="muted">Score</p>
+                        <strong>
+                          {match.home_score ?? "-"} : {match.away_score ?? "-"}
+                        </strong>
                       </div>
 
-                      <div className="row" style={{ marginTop: "16px" }}>
-                        <Link
-                          href={`/matches/${match.id}`}
-                          className="btn btn-secondary"
-                        >
-                          Open match
-                        </Link>
+                      <div>
+                        <p className="muted">Winner</p>
+                        <strong>{match.winner_team?.name ?? "Not decided"}</strong>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
+
+                    <div className="row" style={{ marginTop: "16px" }}>
+                      <Link
+                        href={`/matches/${match.id}`}
+                        className="btn btn-secondary"
+                      >
+                        Open match
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         </>
       ) : null}
     </main>
