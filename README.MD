@@ -1,16 +1,120 @@
 # CyberHub
 
-CyberHub is a diploma project focused on building a tournament platform for competitive teams and players.
+CyberHub is a diploma project focused on building a web platform for esports tournaments and competitive matches.
 
-## About
+The platform is designed to give players, team owners and organizers a single environment for:
+- authentication and user management,
+- team and roster management,
+- tournament creation and participation,
+- match creation and result handling,
+- further expansion toward rating, statistics, moderation and real-time updates.
 
-The project is designed as a web platform for managing:
-- user authentication and authorization
-- teams and team members
-- tournaments and tournament participants
-- matches and match results
+At this stage, the project already contains a working backend foundation **and** a connected frontend with core user flows.
 
-At the current stage, the backend MVP is already implemented and covered with API tests.
+---
+
+## Project goals
+
+CyberHub is being developed as a web platform that reduces manual tournament administration and gives users a more удобный way to work with tournaments, teams and matches.
+
+The diploma scope describes CyberHub as a unified environment for:
+- user registration and authorization,
+- tournament creation and management,
+- match handling and result tracking,
+- statistics visibility,
+- further growth toward ranked scenarios and broader competitive tooling.
+
+---
+
+## Current implementation status
+
+### Backend
+Implemented and working:
+- authentication:
+  - register
+  - login
+  - refresh token
+- users:
+  - current user endpoint
+- teams:
+  - create, update, delete
+  - list all teams
+  - list my teams
+  - team member management
+- tournaments:
+  - create, update, delete
+  - list tournaments
+  - register/remove tournament participants
+  - update tournament status
+- matches:
+  - create, update, delete
+  - list all matches
+  - list matches by tournament
+  - update match score and winner
+- infrastructure:
+  - PostgreSQL
+  - Redis
+  - Alembic migrations
+  - Docker Compose
+- testing:
+  - API tests for auth, users, teams, team members, tournaments and matches
+
+### Frontend
+Implemented and already connected to backend API:
+- login page
+- registration page
+- protected application shell for authorized routes
+- current user loading through shared context/provider
+- profile page
+- teams page:
+  - create team
+  - view all teams
+  - view my teams
+- team details page:
+  - edit team
+  - add/remove members
+  - change member role
+  - delete team
+- tournaments page:
+  - create tournament
+  - view all tournaments
+- tournament details page:
+  - view participants
+  - register a team
+  - remove a team
+  - change tournament status
+  - create match inside tournament
+- matches page:
+  - create match
+  - view all matches
+- match details page:
+  - update score
+  - set winner
+  - update status/schedule
+  - delete match
+- additional personal pages:
+  - my teams
+  - my tournaments
+  - my matches
+- shared UI and navigation:
+  - top navigation/header
+  - alert components
+  - empty states
+  - status badges
+  - shared API client
+
+### Planned / next scope
+The diploma concept also allows further expansion of the platform toward:
+- rating / ranked logic,
+- extended player and team statistics,
+- notifications,
+- dispute handling and moderation,
+- audit log / admin tooling,
+- richer real-time updates with WebSocket.
+
+These parts are part of the broader product direction, but they are **not fully implemented in the current dev branch yet**.
+
+---
 
 ## Technology stack
 
@@ -22,78 +126,149 @@ At the current stage, the backend MVP is already implemented and covered with AP
 - Redis
 - Celery
 - WebSocket
-- Docker Compose
+- Pytest
+- Ruff
+- Black
+- Docker / Docker Compose
 
 ### Frontend
-- Next.js / React / TypeScript
-- Planned / in progress
+- Next.js
+- React
+- TypeScript
+- Tailwind CSS
+- ESLint
 
-### Infrastructure
+### Environment
+- Python 3.11+
+- Node.js
 - Docker
 - Docker Compose
 
+---
+
 ## Repository structure
 
-    CyberHub/
-    ├── backend/
-    ├── frontend/
-    ├── docker-compose.yml
-    └── README.md
+```text
+CyberHub/
+├── backend/          # FastAPI backend, database layer, tests, migrations
+├── frontend/         # Next.js frontend
+├── docker-compose.yml
+└── README.MD
+```
 
-## Implemented backend modules
-
-The backend currently includes:
-- authentication:
-  - register
-  - login
-  - refresh token
-- users:
-  - current user endpoint
-- teams:
-  - create, update, delete
-  - list teams
-  - list my teams
-  - team members management
-- tournaments:
-  - create, update, delete
-  - tournament participants management
-- matches:
-  - create, update, delete
-  - list matches
-  - list matches by tournament
-  - update match score
+---
 
 ## Running the project
 
+### 1. Start backend infrastructure and API
+
 From the repository root:
 
-    docker compose --profile app up --build
+```bash
+docker compose --profile app up --build
+```
+
+This starts:
+- PostgreSQL on `localhost:5433`
+- Redis on `localhost:6379`
+- Backend API on `localhost:8000`
+
+### 2. Start frontend
+
+In a separate terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Frontend will be available at:
+
+```text
+http://localhost:3000
+```
+
+By default, the frontend uses:
+
+```text
+NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+```
+
+If needed, override it through an environment variable.
+
+---
 
 ## Backend API
 
-After startup, the backend is available at:
+After startup, backend documentation and health endpoints are available at:
 
 - Swagger UI: `http://localhost:8000/docs`
 - Health check: `http://localhost:8000/health`
 - Database health check: `http://localhost:8000/health/db`
 
-Business API endpoints are available under:
+Business endpoints are mounted under:
 
-    /api/v1/...
+```text
+/api/v1/...
+```
 
-For example:
-- `/api/v1/auth/register`
-- `/api/v1/auth/login`
-- `/api/v1/users/me`
-- `/api/v1/teams`
-- `/api/v1/tournaments`
-- `/api/v1/matches`
+Examples:
+- `POST /api/v1/auth/register`
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/refresh`
+- `GET /api/v1/users/me`
+- `GET /api/v1/teams`
+- `GET /api/v1/tournaments`
+- `GET /api/v1/matches`
 
-## Current status
+---
 
-The backend foundation is stabilized:
-- Docker environment is configured
-- database migrations work correctly
-- API tests are implemented for key modules
+## Tests
 
-The next major step is frontend development and integration with the existing backend API.
+Run backend tests from the `backend` directory:
+
+```bash
+pytest -v
+```
+
+Run a specific test module:
+
+```bash
+pytest tests/api/test_auth.py -v
+pytest tests/api/test_teams.py -v
+pytest tests/api/test_tournaments.py -v
+pytest tests/api/test_matches.py -v
+```
+
+---
+
+## Migrations
+
+Apply migrations inside the backend container:
+
+```bash
+docker compose --profile app exec backend alembic upgrade head
+```
+
+Create a new migration:
+
+```bash
+docker compose --profile app exec backend alembic revision --autogenerate -m "your message"
+```
+
+---
+
+## What this README reflects
+
+This README intentionally describes the **actual state of the dev branch**:
+- backend foundation is implemented and tested,
+- frontend is no longer just "planned",
+- the application already has working pages and flows for auth, profile, teams, tournaments and matches,
+- broader esports features from the diploma text are treated as roadmap items unless they are already present in code.
+
+---
+
+## Author
+
+Diploma project for BSUIR.
