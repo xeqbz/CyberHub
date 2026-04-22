@@ -10,8 +10,24 @@ export type CurrentUser = {
   updated_at: string;
 };
 
+export type UpdateCurrentUserPayload = {
+  username?: string;
+  email?: string;
+};
+
 export async function getCurrentUser(token: string): Promise<CurrentUser> {
   return apiRequest<CurrentUser>("/users/me", {
+    token,
+  });
+}
+
+export async function updateCurrentUser(
+  payload: UpdateCurrentUserPayload,
+  token: string,
+): Promise<CurrentUser> {
+  return apiRequest<CurrentUser>("/users/me", {
+    method: "PATCH",
+    body: payload,
     token,
   });
 }

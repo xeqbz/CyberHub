@@ -4,50 +4,33 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { apiRequest } from "@/src/shared/api/client";
+import { updateCurrentUser } from "@/src/shared/api/users";
 import { clearTokens, getAccessToken } from "@/src/shared/lib/auth";
-
-type User = {
-  id: number | string;
-  username: string;
-  email: string;
-  is_active: boolean;
-  role: string;
-  created_at: string;
-  updated_at: string;
-};
+import Alert from "@/src/components/ui/alert";
+import { useCurrentUser } from "@/src/hooks/use-current-user";
 
 export default function ProfilePage() {
   const router = useRouter();
+  const {
+    user,
+    isLoading,
+    error,
+    refreshUser,
+  } = useCurrentUser();
 
-  const [user, setUser] = useState<User | null>(null);
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+
+  const [updateError, setUpdateError] = useState("");
+  const [updateSuccess, setUpdateSuccess] = useState("");
+  const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
-    async function loadProfile() {
-      try {
-        const token = getAccessToken();
-
-        if (!token) {
-          router.replace("/login");
-          return;
-        }
-
-        const data = await apiRequest<User>("/users/me", {
-          token,
-        });
-
-        setUser(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load profile");
-      } finally {
-        setIsLoading(false);
-      }
+    if (user) {
+      setUsername(user.username);
+      setEmail(user.email);
     }
-
-    loadProfile();
-  }, [router]);
+  }, [user]);
 
   const initials = useMemo(() => {
     if (!user?.username) return "CH";
@@ -67,6 +50,41 @@ export default function ProfilePage() {
     }
 
     return date.toLocaleString();
+  }
+
+  async function handleProfileUpdate(
+    event: React.FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    const token = getAccessToken();
+    if (!token) {
+      setUpdateError("You need to login before updating profile");
+      return;
+    }
+
+    setUpdateError("");
+    setUpdateSuccess("");
+    setIsUpdating(true);
+
+    try {
+      await updateCurrentUser(
+        {
+          username,
+          email,
+        },
+        token,
+      );
+
+      await refreshUser();
+      setUpdateSuccess("Profile updated successfully");
+    } catch (err) {
+      setUpdateError(
+        err instanceof Error ? err.message : "Failed to update profile",
+      );
+    } finally {
+      setIsUpdating(false);
+    }
   }
 
   return (
@@ -109,21 +127,9 @@ export default function ProfilePage() {
       ) : null}
 
       {!isLoading && error ? (
-        <section>
-          <h2>Failed to load profile</h2>
-          <p className="error-text" style={{ marginTop: "10px" }}>
-            {error}
-          </p>
-
-          <div className="row" style={{ marginTop: "18px" }}>
-            <button type="button" onClick={() => window.location.reload()}>
-              Retry
-            </button>
-            <Link href="/login" className="btn btn-secondary">
-              Go to login
-            </Link>
-          </div>
-        </section>
+        <Alert variant="error" title="Failed to load profile">
+          {error}
+        </Alert>
       ) : null}
 
       {!isLoading && user ? (
@@ -147,54 +153,88 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          <section>
-            <h2>Account details</h2>
-            <p style={{ marginBottom: "20px" }}>
-              Basic information returned by the backend for the current user.
-            </p>
+          <div className="grid grid-2" style={{ marginBottom: "24px" }}>
+            <section>
+              <h2>Edit profile</h2>
+              <p style={{ marginBottom: "20px" }}>
+                Update your username and email for the current account.
+              </p>
 
-            <div className="grid grid-2">
-              <div className="card">
-                <h3>Identity</h3>
-                <div style={{ marginTop: "14px" }} className="grid">
-                  <div>
-                    <p className="muted">Username</p>
-                    <strong>{user.username}</strong>
-                  </div>
+              <form onSubmit={handleProfileUpdate}>
+                <div className="form-group">
+                  <label htmlFor="profile-username">Username</label>
+                  <input
+                    id="profile-username"
+                    type="text"
+                    value={username}
+                    onChange={(event) => setUsername(event.target.value)}
+                    required
+                  />
+                </div>
 
-                  <div>
-                    <p className="muted">Email</p>
-                    <strong>{user.email}</strong>
-                  </div>
+                <div className="form-group">
+                  <label htmlFor="profile-email">Email</label>
+                  <input
+                    id="profile-email"
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    required
+                  />
+                </div>
 
-                  <div>
-                    <p className="muted">Role</p>
-                    <strong>{user.role}</strong>
-                  </div>
+                {updateError ? (
+                  <Alert variant="error" title="Profile update failed">
+                    {updateError}
+                  </Alert>
+                ) : null}
+
+                {updateSuccess ? (
+                  <Alert variant="success" title="Profile updated">
+                    {updateSuccess}
+                  </Alert>
+                ) : null}
+
+                <button type="submit" disabled={isUpdating}>
+                  {isUpdating ? "Saving..." : "Save changes"}
+                </button>
+              </form>
+            </section>
+
+            <section>
+              <h2>Account details</h2>
+              <p style={{ marginBottom: "20px" }}>
+                Basic information returned by the backend for the current user.
+              </p>
+
+              <div className="grid">
+                <div>
+                  <p className="muted">Username</p>
+                  <strong>{user.username}</strong>
+                </div>
+
+                <div>
+                  <p className="muted">Email</p>
+                  <strong>{user.email}</strong>
+                </div>
+
+                <div>
+                  <p className="muted">Role</p>
+                  <strong>{user.role}</strong>
+                </div>
+
+                <div>
+                  <p className="muted">Created at</p>
+                  <strong>{formatDate(user.created_at)}</strong>
+                </div>
+
+                <div>
+                  <p className="muted">Updated at</p>
+                  <strong>{formatDate(user.updated_at)}</strong>
                 </div>
               </div>
-
-              <div className="card">
-                <h3>Metadata</h3>
-                <div style={{ marginTop: "14px" }} className="grid">
-                  <div>
-                    <p className="muted">Created at</p>
-                    <strong>{formatDate(user.created_at)}</strong>
-                  </div>
-
-                  <div>
-                    <p className="muted">Updated at</p>
-                    <strong>{formatDate(user.updated_at)}</strong>
-                  </div>
-
-                  <div>
-                    <p className="muted">Active</p>
-                    <strong>{String(user.is_active)}</strong>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
+            </section>
+          </div>
         </>
       ) : null}
     </div>
