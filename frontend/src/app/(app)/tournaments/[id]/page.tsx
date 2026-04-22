@@ -4,7 +4,15 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import { listMyTeams, type TeamRead } from "@/src/shared/api/teams";
+import {
+  listMyTeams,
+  type TeamRead,
+} from "@/src/shared/api/teams";
+import {
+  createMatch,
+  listTournamentMatches,
+  type MatchRead,
+} from "@/src/shared/api/matches";
 import {
   getTournament,
   registerTeamForTournament,
@@ -38,6 +46,7 @@ export default function TournamentDetailsPage() {
   const tournamentId = useMemo(() => Number(params?.id), [params]);
 
   const [tournament, setTournament] = useState<TournamentRead | null>(null);
+  const [tournamentMatches, setTournamentMatches] = useState<MatchRead[]>([]);
   const [myTeams, setMyTeams] = useState<TeamRead[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState("");
 
@@ -54,8 +63,16 @@ export default function TournamentDetailsPage() {
   const [statusError, setStatusError] = useState("");
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
+  const [matchesError, setMatchesError] = useState("");
+  const [homeTeamId, setHomeTeamId] = useState("");
+  const [awayTeamId, setAwayTeamId] = useState("");
+  const [scheduledAt, setScheduledAt] = useState("");
+  const [createMatchError, setCreateMatchError] = useState("");
+  const [createMatchSuccess, setCreateMatchSuccess] = useState("");
+  const [isCreatingMatch, setIsCreatingMatch] = useState(false);
+
   useEffect(() => {
-    async function loadTournament() {
+    async function loadTournamentData() {
       if (!Number.isFinite(tournamentId)) {
         setError("Invalid tournament id");
         setIsLoading(false);
@@ -64,10 +81,16 @@ export default function TournamentDetailsPage() {
 
       try {
         setError("");
+        setMatchesError("");
         setIsLoading(true);
 
-        const data = await getTournament(tournamentId);
-        setTournament(data);
+        const [tournamentData, matchesData] = await Promise.all([
+          getTournament(tournamentId),
+          listTournamentMatches(tournamentId),
+        ]);
+
+        setTournament(tournamentData);
+        setTournamentMatches(matchesData);
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Failed to load tournament",
@@ -77,7 +100,7 @@ export default function TournamentDetailsPage() {
       }
     }
 
-    loadTournament();
+    loadTournamentData();
   }, [tournamentId]);
 
   useEffect(() => {
@@ -89,24 +112,30 @@ export default function TournamentDetailsPage() {
         const data = await listMyTeams(token);
         setMyTeams(data);
       } catch {
-        // keep silent here, tournament page can still work without this block
+        // page can still work without this block
       }
     }
 
     loadMyTeams();
   }, []);
 
-  async function refreshTournament() {
+  async function refreshTournamentData() {
     if (!Number.isFinite(tournamentId)) return;
 
-    const data = await getTournament(tournamentId);
-    setTournament(data);
+    const [tournamentData, matchesData] = await Promise.all([
+      getTournament(tournamentId),
+      listTournamentMatches(tournamentId),
+    ]);
+
+    setTournament(tournamentData);
+    setTournamentMatches(matchesData);
   }
 
   async function handleRegisterTeam(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const token = getAccessToken();
+
     if (!token) {
       setRegisterError("You need to login before registering a team");
       return;
@@ -125,7 +154,7 @@ export default function TournamentDetailsPage() {
       await registerTeamForTournament(tournamentId, Number(selectedTeamId), token);
       setRegisterSuccess("Team registered successfully");
       setSelectedTeamId("");
-      await refreshTournament();
+      await refreshTournamentData();
     } catch (err) {
       setRegisterError(
         err instanceof Error ? err.message : "Failed to register team",
@@ -137,6 +166,7 @@ export default function TournamentDetailsPage() {
 
   async function handleRemoveTeam(teamId: number) {
     const token = getAccessToken();
+
     if (!token) {
       setRemoveError("You need to login before removing a participant");
       return;
@@ -147,7 +177,7 @@ export default function TournamentDetailsPage() {
 
     try {
       await removeTeamFromTournament(tournamentId, teamId, token);
-      await refreshTournament();
+      await refreshTournamentData();
     } catch (err) {
       setRemoveError(
         err instanceof Error ? err.message : "Failed to remove team",
@@ -159,6 +189,7 @@ export default function TournamentDetailsPage() {
 
   async function handleStatusChange(nextStatus: TournamentStatus) {
     const token = getAccessToken();
+
     if (!token) {
       setStatusError("You need to login before updating tournament status");
       return;
@@ -183,6 +214,63 @@ export default function TournamentDetailsPage() {
     }
   }
 
+  async function handleCreateMatch(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const token = getAccessToken();
+
+    if (!token) {
+      setCreateMatchError("You need to login before creating a match");
+      return;
+    }
+
+    if (!homeTeamId || !awayTeamId) {
+      setCreateMatchError("Select both teams");
+      return;
+    }
+
+    if (homeTeamId === awayTeamId) {
+      setCreateMatchError("Teams must be different");
+      return;
+    }
+
+    setCreateMatchError("");
+    setCreateMatchSuccess("");
+    setIsCreatingMatch(true);
+
+    try {
+      const createdMatch = await createMatch(
+        {
+          tournament_id: tournamentId,
+          home_team_id: Number(homeTeamId),
+          away_team_id: Number(awayTeamId),
+          scheduled_at: scheduledAt
+            ? new Date(scheduledAt).toISOString()
+            : null,
+        },
+        token,
+      );
+
+      setCreateMatchSuccess(`Match #${createdMatch.id} created successfully`);
+      setHomeTeamId("");
+      setAwayTeamId("");
+      setScheduledAt("");
+
+      await refreshTournamentData();
+    } catch (err) {
+      setCreateMatchError(
+        err instanceof Error ? err.message : "Failed to create match",
+      );
+    } finally {
+      setIsCreatingMatch(false);
+    }
+  }
+
+  const participantTeams = useMemo(() => {
+    if (!tournament) return [];
+    return tournament.participants.map((participant) => participant.team);
+  }, [tournament]);
+
   return (
     <main>
       <div className="page-header">
@@ -192,13 +280,17 @@ export default function TournamentDetailsPage() {
             {tournament?.name ?? "Tournament"}
           </h1>
           <p className="page-subtitle">
-            Inspect tournament metadata, participants and registration flow.
+            Inspect tournament metadata, participants, registration flow and
+            matches.
           </p>
         </div>
 
         <div className="row">
           <Link href="/tournaments" className="btn btn-secondary">
             Back to tournaments
+          </Link>
+          <Link href="/matches" className="btn btn-secondary">
+            All matches
           </Link>
           <Link href="/teams" className="btn btn-secondary">
             Teams
@@ -389,6 +481,136 @@ export default function TournamentDetailsPage() {
                             ? "Removing..."
                             : "Remove"}
                         </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+
+          <div className="grid grid-2" style={{ marginBottom: "24px" }}>
+            <section>
+              <h2>Create match for this tournament</h2>
+              <p style={{ marginBottom: "20px" }}>
+                Create a match using the teams that are already registered in this
+                tournament.
+              </p>
+
+              {participantTeams.length < 2 ? (
+                <p>
+                  At least two registered teams are required before creating a
+                  match.
+                </p>
+              ) : (
+                <form onSubmit={handleCreateMatch}>
+                  <div className="grid grid-2">
+                    <div className="form-group">
+                      <label htmlFor="home-team-id">Home team</label>
+                      <select
+                        id="home-team-id"
+                        value={homeTeamId}
+                        onChange={(event) => setHomeTeamId(event.target.value)}
+                      >
+                        <option value="">Choose team</option>
+                        {participantTeams.map((team) => (
+                          <option key={team.id} value={team.id}>
+                            {team.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="away-team-id">Away team</label>
+                      <select
+                        id="away-team-id"
+                        value={awayTeamId}
+                        onChange={(event) => setAwayTeamId(event.target.value)}
+                      >
+                        <option value="">Choose team</option>
+                        {participantTeams.map((team) => (
+                          <option key={team.id} value={team.id}>
+                            {team.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="scheduled-at">Scheduled at</label>
+                    <input
+                      id="scheduled-at"
+                      type="datetime-local"
+                      value={scheduledAt}
+                      onChange={(event) => setScheduledAt(event.target.value)}
+                    />
+                  </div>
+
+                  {createMatchError ? (
+                    <p className="error-text">{createMatchError}</p>
+                  ) : null}
+                  {createMatchSuccess ? (
+                    <p className="success-text">{createMatchSuccess}</p>
+                  ) : null}
+
+                  <button type="submit" disabled={isCreatingMatch}>
+                    {isCreatingMatch ? "Creating..." : "Create match"}
+                  </button>
+                </form>
+              )}
+            </section>
+
+            <section>
+              <h2>Tournament matches</h2>
+              <p style={{ marginBottom: "20px" }}>
+                Matches linked to this tournament.
+              </p>
+
+              {matchesError ? <p className="error-text">{matchesError}</p> : null}
+
+              {tournamentMatches.length === 0 ? (
+                <p>No matches have been created for this tournament yet.</p>
+              ) : (
+                <div className="grid">
+                  {tournamentMatches.map((match) => (
+                    <div key={match.id} className="card">
+                      <div className="row" style={{ justifyContent: "space-between" }}>
+                        <div>
+                          <h3>
+                            {match.home_team.name} vs {match.away_team.name}
+                          </h3>
+                          <p>Scheduled: {formatDate(match.scheduled_at)}</p>
+                        </div>
+
+                        <span className="badge">{match.status}</span>
+                      </div>
+
+                      <div
+                        className="grid grid-2"
+                        style={{ marginTop: "16px", gap: "12px" }}
+                      >
+                        <div>
+                          <p className="muted">Score</p>
+                          <strong>
+                            {match.home_score ?? "-"} : {match.away_score ?? "-"}
+                          </strong>
+                        </div>
+
+                        <div>
+                          <p className="muted">Winner</p>
+                          <strong>{match.winner_team?.name ?? "Not decided"}</strong>
+                        </div>
+                      </div>
+
+                      <div className="row" style={{ marginTop: "16px" }}>
+                        <Link
+                          href={`/matches/${match.id}`}
+                          className="btn btn-secondary"
+                        >
+                          Open match
+                        </Link>
                       </div>
                     </div>
                   ))}

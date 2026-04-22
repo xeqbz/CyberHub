@@ -38,3 +38,17 @@ export function clearTokens(): void {
 export function isAuthenticated(): boolean {
   return Boolean(getAccessToken());
 }
+
+export function getSafeNextPath(next: string | null | undefined): string {
+  if (!next) return "/";
+
+  if (!next.startsWith("/")) {
+    return "/";
+  }
+
+  if (next.startsWith("//")) {
+    return "/";
+  }
+
+  return next;
+}

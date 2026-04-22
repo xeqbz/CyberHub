@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { getAccessToken } from "@/src/shared/lib/auth";
 
@@ -14,19 +14,24 @@ export default function ProtectedAppShell({
 }: ProtectedAppShellProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   useEffect(() => {
     const token = getAccessToken();
 
     if (!token) {
-      const next = pathname && pathname !== "/" ? `?next=${encodeURIComponent(pathname)}` : "";
+      const search = searchParams?.toString();
+      const fullPath = `${pathname}${search ? `?${search}` : ""}`;
+      const next =
+        fullPath && fullPath !== "/" ? `?next=${encodeURIComponent(fullPath)}` : "";
+
       router.replace(`/login${next}`);
       return;
     }
 
     setIsCheckingAuth(false);
-  }, [pathname, router]);
+  }, [pathname, router, searchParams]);
 
   if (isCheckingAuth) {
     return (

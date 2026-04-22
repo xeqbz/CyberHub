@@ -1,20 +1,37 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { apiRequest } from "@/src/shared/api/client";
-import { saveTokens, type TokenPair } from "@/src/shared/lib/auth";
+import {
+  getSafeNextPath,
+  isAuthenticated,
+  saveTokens,
+  type TokenPair,
+} from "@/src/shared/lib/auth";
 
 export default function RegisterPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const nextPath = useMemo(
+    () => getSafeNextPath(searchParams?.get("next")),
+    [searchParams],
+  );
 
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (isAuthenticated()) {
+      router.replace(nextPath);
+    }
+  }, [nextPath, router]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -28,7 +45,7 @@ export default function RegisterPage() {
       });
 
       saveTokens(data);
-      router.push("/");
+      router.push(nextPath);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
@@ -94,7 +111,10 @@ export default function RegisterPage() {
         </form>
 
         <div className="auth-footer">
-          Already have an account? <Link href="/login">Login</Link>
+          Already have an account?{" "}
+          <Link href={`/login${nextPath !== "/" ? `?next=${encodeURIComponent(nextPath)}` : ""}`}>
+            Login
+          </Link>
         </div>
       </div>
     </div>
