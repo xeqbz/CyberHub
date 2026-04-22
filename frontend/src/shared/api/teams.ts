@@ -47,6 +47,20 @@ export type CreateTeamPayload = {
   description?: string;
 };
 
+export type UpdateTeamPayload = {
+  name?: string;
+  description?: string | null;
+};
+
+export type AddTeamMemberPayload = {
+  user_id: number;
+  role?: TeamMemberRole;
+};
+
+export type UpdateTeamMemberRolePayload = {
+  role: TeamMemberRole;
+};
+
 export async function listTeams(): Promise<TeamListItem[]> {
   return apiRequest<TeamListItem[]>("/teams");
 }
@@ -68,6 +82,61 @@ export async function createTeam(
   return apiRequest<TeamRead>("/teams", {
     method: "POST",
     body: payload,
+    token,
+  });
+}
+
+export async function updateTeam(
+  teamId: number,
+  payload: UpdateTeamPayload,
+  token: string,
+): Promise<TeamRead> {
+  return apiRequest<TeamRead>(`/teams/${teamId}`, {
+    method: "PATCH",
+    body: payload,
+    token,
+  });
+}
+
+export async function deleteTeam(teamId: number, token: string): Promise<void> {
+  await apiRequest<void>(`/teams/${teamId}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+export async function addTeamMember(
+  teamId: number,
+  payload: AddTeamMemberPayload,
+  token: string,
+): Promise<TeamMember> {
+  return apiRequest<TeamMember>(`/teams/${teamId}/members`, {
+    method: "POST",
+    body: payload,
+    token,
+  });
+}
+
+export async function updateTeamMemberRole(
+  teamId: number,
+  userId: number,
+  payload: UpdateTeamMemberRolePayload,
+  token: string,
+): Promise<TeamMember> {
+  return apiRequest<TeamMember>(`/teams/${teamId}/members/${userId}`, {
+    method: "PATCH",
+    body: payload,
+    token,
+  });
+}
+
+export async function removeTeamMember(
+  teamId: number,
+  userId: number,
+  token: string,
+): Promise<void> {
+  await apiRequest<void>(`/teams/${teamId}/members/${userId}`, {
+    method: "DELETE",
     token,
   });
 }
