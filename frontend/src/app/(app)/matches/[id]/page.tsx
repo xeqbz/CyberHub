@@ -12,6 +12,8 @@ import {
   type MatchRead,
 } from "@/src/shared/api/matches";
 import { getAccessToken } from "@/src/shared/lib/auth";
+import Alert from "@/src/components/ui/alert";
+import StatusBadge from "@/src/components/ui/status-badge";
 
 function formatDate(value: string | null): string {
   if (!value) return "Not specified";
@@ -43,6 +45,7 @@ export default function MatchDetailsPage() {
   const [scheduledAtValue, setScheduledAtValue] = useState("");
 
   const [updateError, setUpdateError] = useState("");
+  const [updateSuccess, setUpdateSuccess] = useState("");
   const [isUpdatingMatch, setIsUpdatingMatch] = useState(false);
 
   const [deleteError, setDeleteError] = useState("");
@@ -126,6 +129,7 @@ export default function MatchDetailsPage() {
     }
 
     setUpdateError("");
+    setUpdateSuccess("");
     setIsUpdatingMatch(true);
 
     try {
@@ -141,6 +145,7 @@ export default function MatchDetailsPage() {
       );
 
       setMatch(updated);
+      setUpdateSuccess("Match updated successfully");
     } catch (err) {
       setUpdateError(
         err instanceof Error ? err.message : "Failed to update match",
@@ -177,9 +182,7 @@ export default function MatchDetailsPage() {
         <div>
           <span className="badge">Match details</span>
           <h1 className="page-title" style={{ marginTop: "14px" }}>
-            {match
-              ? `${match.home_team.name} vs ${match.away_team.name}`
-              : "Match"}
+            {match ? `${match.home_team.name} vs ${match.away_team.name}` : "Match"}
           </h1>
           <p className="page-subtitle">
             Inspect metadata, update score and manage match lifecycle.
@@ -209,12 +212,9 @@ export default function MatchDetailsPage() {
       ) : null}
 
       {!isLoading && error ? (
-        <section>
-          <h2>Failed to load match</h2>
-          <p className="error-text" style={{ marginTop: "10px" }}>
-            {error}
-          </p>
-        </section>
+        <Alert variant="error" title="Failed to load match">
+          {error}
+        </Alert>
       ) : null}
 
       {!isLoading && match ? (
@@ -222,7 +222,9 @@ export default function MatchDetailsPage() {
           <div className="grid grid-3" style={{ marginBottom: "24px" }}>
             <div className="card stat-card">
               <div className="stat-label">Status</div>
-              <div className="stat-value">{match.status}</div>
+              <div className="stat-value">
+                <StatusBadge value={match.status} />
+              </div>
             </div>
 
             <div className="card stat-card">
@@ -310,9 +312,16 @@ export default function MatchDetailsPage() {
                   </select>
                 </div>
 
-                {scoreError ? <p className="error-text">{scoreError}</p> : null}
+                {scoreError ? (
+                  <Alert variant="error" title="Score update failed">
+                    {scoreError}
+                  </Alert>
+                ) : null}
+
                 {scoreSuccess ? (
-                  <p className="success-text">{scoreSuccess}</p>
+                  <Alert variant="success" title="Score updated">
+                    {scoreSuccess}
+                  </Alert>
                 ) : null}
 
                 <button type="submit" disabled={isUpdatingScore}>
@@ -344,13 +353,21 @@ export default function MatchDetailsPage() {
                     id="match-scheduled-at"
                     type="datetime-local"
                     value={scheduledAtValue}
-                    onChange={(event) =>
-                      setScheduledAtValue(event.target.value)
-                    }
+                    onChange={(event) => setScheduledAtValue(event.target.value)}
                   />
                 </div>
 
-                {updateError ? <p className="error-text">{updateError}</p> : null}
+                {updateError ? (
+                  <Alert variant="error" title="Match update failed">
+                    {updateError}
+                  </Alert>
+                ) : null}
+
+                {updateSuccess ? (
+                  <Alert variant="success" title="Match updated">
+                    {updateSuccess}
+                  </Alert>
+                ) : null}
 
                 <button type="submit" disabled={isUpdatingMatch}>
                   {isUpdatingMatch ? "Saving..." : "Save changes"}
@@ -364,7 +381,11 @@ export default function MatchDetailsPage() {
                 Deleting a match removes it permanently.
               </p>
 
-              {deleteError ? <p className="error-text">{deleteError}</p> : null}
+              {deleteError ? (
+                <Alert variant="error" title="Delete failed">
+                  {deleteError}
+                </Alert>
+              ) : null}
 
               <button
                 type="button"

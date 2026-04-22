@@ -10,6 +10,9 @@ import {
   type TournamentStatus,
 } from "@/src/shared/api/tournaments";
 import { getAccessToken, isAuthenticated } from "@/src/shared/lib/auth";
+import Alert from "@/src/components/ui/alert";
+import EmptyState from "@/src/components/ui/empty-state";
+import StatusBadge from "@/src/components/ui/status-badge";
 
 const STATUS_OPTIONS: TournamentStatus[] = [
   "DRAFT",
@@ -156,19 +159,20 @@ export default function TournamentsPage() {
           </p>
 
           {!authenticated ? (
-            <div className="card">
-              <p style={{ marginBottom: "16px" }}>
-                Login is required to create a tournament.
-              </p>
-              <div className="row">
-                <Link href="/login" className="btn btn-secondary">
-                  Login
-                </Link>
-                <Link href="/register" className="btn btn-secondary">
-                  Register
-                </Link>
-              </div>
-            </div>
+            <EmptyState
+              title="Login required"
+              description="You need to sign in before creating a tournament."
+              action={
+                <div className="row">
+                  <Link href="/login" className="btn btn-secondary">
+                    Login
+                  </Link>
+                  <Link href="/register" className="btn btn-secondary">
+                    Register
+                  </Link>
+                </div>
+              }
+            />
           ) : (
             <form onSubmit={handleCreateTournament}>
               <div className="form-group">
@@ -235,9 +239,16 @@ export default function TournamentsPage() {
                 />
               </div>
 
-              {createError ? <p className="error-text">{createError}</p> : null}
+              {createError ? (
+                <Alert variant="error" title="Tournament creation failed">
+                  {createError}
+                </Alert>
+              ) : null}
+
               {createSuccess ? (
-                <p className="success-text">{createSuccess}</p>
+                <Alert variant="success" title="Tournament created">
+                  {createSuccess}
+                </Alert>
               ) : null}
 
               <button type="submit" disabled={isCreating}>
@@ -283,10 +294,18 @@ export default function TournamentsPage() {
         </p>
 
         {isLoading ? <p>Loading tournaments...</p> : null}
-        {loadError ? <p className="error-text">{loadError}</p> : null}
+
+        {loadError ? (
+          <Alert variant="error" title="Failed to load tournaments">
+            {loadError}
+          </Alert>
+        ) : null}
 
         {!isLoading && !loadError && tournaments.length === 0 ? (
-          <p>No tournaments have been created yet.</p>
+          <EmptyState
+            title="No tournaments yet"
+            description="No tournaments have been created yet."
+          />
         ) : null}
 
         {!isLoading && !loadError && tournaments.length > 0 ? (
@@ -299,7 +318,7 @@ export default function TournamentsPage() {
                     <p>{tournament.description || "No description provided."}</p>
                   </div>
 
-                  <span className="badge">{tournament.status}</span>
+                  <StatusBadge value={tournament.status} />
                 </div>
 
                 <div

@@ -4,16 +4,12 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { listTeams, type TeamListItem } from "@/src/shared/api/teams";
-import {
-  createMatch,
-  listMatches,
-  type MatchListItem,
-} from "@/src/shared/api/matches";
-import {
-  listTournaments,
-  type TournamentListItem,
-} from "@/src/shared/api/tournaments";
+import { createMatch, listMatches, type MatchListItem } from "@/src/shared/api/matches";
+import { listTournaments, type TournamentListItem } from "@/src/shared/api/tournaments";
 import { getAccessToken, isAuthenticated } from "@/src/shared/lib/auth";
+import Alert from "@/src/components/ui/alert";
+import EmptyState from "@/src/components/ui/empty-state";
+import StatusBadge from "@/src/components/ui/status-badge";
 
 function formatDate(value: string | null): string {
   if (!value) return "Not scheduled";
@@ -110,9 +106,7 @@ export default function MatchesPage() {
           tournament_id: Number(tournamentId),
           home_team_id: Number(homeTeamId),
           away_team_id: Number(awayTeamId),
-          scheduled_at: scheduledAt
-            ? new Date(scheduledAt).toISOString()
-            : null,
+          scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
         },
         token,
       );
@@ -189,19 +183,20 @@ export default function MatchesPage() {
           </p>
 
           {!authenticated ? (
-            <div className="card">
-              <p style={{ marginBottom: "16px" }}>
-                Login is required to create a match.
-              </p>
-              <div className="row">
-                <Link href="/login" className="btn btn-secondary">
-                  Login
-                </Link>
-                <Link href="/register" className="btn btn-secondary">
-                  Register
-                </Link>
-              </div>
-            </div>
+            <EmptyState
+              title="Login required"
+              description="You need to sign in before creating a match."
+              action={
+                <div className="row">
+                  <Link href="/login" className="btn btn-secondary">
+                    Login
+                  </Link>
+                  <Link href="/register" className="btn btn-secondary">
+                    Register
+                  </Link>
+                </div>
+              }
+            />
           ) : (
             <form onSubmit={handleCreateMatch}>
               <div className="form-group">
@@ -267,9 +262,16 @@ export default function MatchesPage() {
                 />
               </div>
 
-              {createError ? <p className="error-text">{createError}</p> : null}
+              {createError ? (
+                <Alert variant="error" title="Match creation failed">
+                  {createError}
+                </Alert>
+              ) : null}
+
               {createSuccess ? (
-                <p className="success-text">{createSuccess}</p>
+                <Alert variant="success" title="Match created">
+                  {createSuccess}
+                </Alert>
               ) : null}
 
               <button type="submit" disabled={isCreating}>
@@ -284,9 +286,7 @@ export default function MatchesPage() {
           <div className="grid" style={{ marginTop: "18px" }}>
             <div className="card">
               <h3>Ownership</h3>
-              <p>
-                Backend allows match creation only for the tournament owner.
-              </p>
+              <p>Backend allows match creation only for the tournament owner.</p>
             </div>
 
             <div className="card">
@@ -299,9 +299,7 @@ export default function MatchesPage() {
 
             <div className="card">
               <h3>Next step</h3>
-              <p>
-                Open the match details page to update score, winner and status.
-              </p>
+              <p>Open the match details page to update score, winner and status.</p>
             </div>
           </div>
         </section>
@@ -314,10 +312,18 @@ export default function MatchesPage() {
         </p>
 
         {isLoading ? <p>Loading matches...</p> : null}
-        {loadError ? <p className="error-text">{loadError}</p> : null}
+
+        {loadError ? (
+          <Alert variant="error" title="Failed to load matches">
+            {loadError}
+          </Alert>
+        ) : null}
 
         {!isLoading && !loadError && matches.length === 0 ? (
-          <p>No matches have been created yet.</p>
+          <EmptyState
+            title="No matches yet"
+            description="No matches have been created yet."
+          />
         ) : null}
 
         {!isLoading && !loadError && matches.length > 0 ? (
@@ -338,7 +344,7 @@ export default function MatchesPage() {
                       <p>{tournament?.name ?? `Tournament #${match.tournament_id}`}</p>
                     </div>
 
-                    <span className="badge">{match.status}</span>
+                    <StatusBadge value={match.status} />
                   </div>
 
                   <div
@@ -359,10 +365,7 @@ export default function MatchesPage() {
                   </div>
 
                   <div className="row" style={{ marginTop: "16px" }}>
-                    <Link
-                      href={`/matches/${match.id}`}
-                      className="btn btn-secondary"
-                    >
+                    <Link href={`/matches/${match.id}`} className="btn btn-secondary">
                       Open match
                     </Link>
                   </div>

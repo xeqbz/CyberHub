@@ -4,15 +4,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import {
-  listMyTeams,
-  type TeamRead,
-} from "@/src/shared/api/teams";
-import {
-  createMatch,
-  listTournamentMatches,
-  type MatchRead,
-} from "@/src/shared/api/matches";
+import { listMyTeams, type TeamRead } from "@/src/shared/api/teams";
+import { createMatch, listTournamentMatches, type MatchRead } from "@/src/shared/api/matches";
 import {
   getTournament,
   registerTeamForTournament,
@@ -22,6 +15,9 @@ import {
   type TournamentStatus,
 } from "@/src/shared/api/tournaments";
 import { getAccessToken } from "@/src/shared/lib/auth";
+import Alert from "@/src/components/ui/alert";
+import EmptyState from "@/src/components/ui/empty-state";
+import StatusBadge from "@/src/components/ui/status-badge";
 
 const STATUS_OPTIONS: TournamentStatus[] = [
   "DRAFT",
@@ -244,9 +240,7 @@ export default function TournamentDetailsPage() {
           tournament_id: tournamentId,
           home_team_id: Number(homeTeamId),
           away_team_id: Number(awayTeamId),
-          scheduled_at: scheduledAt
-            ? new Date(scheduledAt).toISOString()
-            : null,
+          scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
         },
         token,
       );
@@ -306,12 +300,9 @@ export default function TournamentDetailsPage() {
       ) : null}
 
       {!isLoading && error ? (
-        <section>
-          <h2>Failed to load tournament</h2>
-          <p className="error-text" style={{ marginTop: "10px" }}>
-            {error}
-          </p>
-        </section>
+        <Alert variant="error" title="Failed to load tournament">
+          {error}
+        </Alert>
       ) : null}
 
       {!isLoading && tournament ? (
@@ -324,7 +315,9 @@ export default function TournamentDetailsPage() {
 
             <div className="card stat-card">
               <div className="stat-label">Status</div>
-              <div className="stat-value">{tournament.status}</div>
+              <div className="stat-value">
+                <StatusBadge value={tournament.status} />
+              </div>
             </div>
 
             <div className="card stat-card">
@@ -390,7 +383,11 @@ export default function TournamentDetailsPage() {
                 </select>
               </div>
 
-              {statusError ? <p className="error-text">{statusError}</p> : null}
+              {statusError ? (
+                <Alert variant="error" title="Status update failed">
+                  {statusError}
+                </Alert>
+              ) : null}
             </section>
           </div>
 
@@ -403,9 +400,10 @@ export default function TournamentDetailsPage() {
               </p>
 
               {myTeams.length === 0 ? (
-                <p>
-                  You have no teams available. Create one first on the Teams page.
-                </p>
+                <EmptyState
+                  title="No teams available"
+                  description="You have no teams available. Create one first on the Teams page."
+                />
               ) : (
                 <form onSubmit={handleRegisterTeam}>
                   <div className="form-group">
@@ -425,10 +423,15 @@ export default function TournamentDetailsPage() {
                   </div>
 
                   {registerError ? (
-                    <p className="error-text">{registerError}</p>
+                    <Alert variant="error" title="Registration failed">
+                      {registerError}
+                    </Alert>
                   ) : null}
+
                   {registerSuccess ? (
-                    <p className="success-text">{registerSuccess}</p>
+                    <Alert variant="success" title="Team registered">
+                      {registerSuccess}
+                    </Alert>
                   ) : null}
 
                   <button type="submit" disabled={isRegistering}>
@@ -444,10 +447,17 @@ export default function TournamentDetailsPage() {
                 Current registered teams in this tournament.
               </p>
 
-              {removeError ? <p className="error-text">{removeError}</p> : null}
+              {removeError ? (
+                <Alert variant="error" title="Remove failed">
+                  {removeError}
+                </Alert>
+              ) : null}
 
               {tournament.participants.length === 0 ? (
-                <p>No participants registered yet.</p>
+                <EmptyState
+                  title="No participants yet"
+                  description="No participants are registered in this tournament yet."
+                />
               ) : (
                 <div className="grid">
                   {tournament.participants.map((participant) => (
@@ -498,10 +508,10 @@ export default function TournamentDetailsPage() {
               </p>
 
               {participantTeams.length < 2 ? (
-                <p>
-                  At least two registered teams are required before creating a
-                  match.
-                </p>
+                <EmptyState
+                  title="Not enough teams"
+                  description="At least two registered teams are required before creating a match."
+                />
               ) : (
                 <form onSubmit={handleCreateMatch}>
                   <div className="grid grid-2">
@@ -549,10 +559,15 @@ export default function TournamentDetailsPage() {
                   </div>
 
                   {createMatchError ? (
-                    <p className="error-text">{createMatchError}</p>
+                    <Alert variant="error" title="Match creation failed">
+                      {createMatchError}
+                    </Alert>
                   ) : null}
+
                   {createMatchSuccess ? (
-                    <p className="success-text">{createMatchSuccess}</p>
+                    <Alert variant="success" title="Match created">
+                      {createMatchSuccess}
+                    </Alert>
                   ) : null}
 
                   <button type="submit" disabled={isCreatingMatch}>
@@ -568,10 +583,17 @@ export default function TournamentDetailsPage() {
                 Matches linked to this tournament.
               </p>
 
-              {matchesError ? <p className="error-text">{matchesError}</p> : null}
+              {matchesError ? (
+                <Alert variant="error" title="Failed to load matches">
+                  {matchesError}
+                </Alert>
+              ) : null}
 
               {tournamentMatches.length === 0 ? (
-                <p>No matches have been created for this tournament yet.</p>
+                <EmptyState
+                  title="No matches yet"
+                  description="No matches have been created for this tournament yet."
+                />
               ) : (
                 <div className="grid">
                   {tournamentMatches.map((match) => (
@@ -584,7 +606,7 @@ export default function TournamentDetailsPage() {
                           <p>Scheduled: {formatDate(match.scheduled_at)}</p>
                         </div>
 
-                        <span className="badge">{match.status}</span>
+                        <StatusBadge value={match.status} />
                       </div>
 
                       <div

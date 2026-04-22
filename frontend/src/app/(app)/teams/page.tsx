@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import { createTeam, listMyTeams, listTeams, type TeamListItem, type TeamRead } from "@/src/shared/api/teams";
 import { getAccessToken, isAuthenticated } from "@/src/shared/lib/auth";
+import Alert from "@/src/components/ui/alert";
+import EmptyState from "@/src/components/ui/empty-state";
 
 function formatDate(value: string): string {
   const date = new Date(value);
@@ -154,19 +156,20 @@ export default function TeamsPage() {
           </p>
 
           {!authenticated ? (
-            <div className="card">
-              <p style={{ marginBottom: "16px" }}>
-                Login is required to create a team.
-              </p>
-              <div className="row">
-                <Link href="/login" className="btn btn-secondary">
-                  Login
-                </Link>
-                <Link href="/register" className="btn btn-secondary">
-                  Register
-                </Link>
-              </div>
-            </div>
+            <EmptyState
+              title="Login required"
+              description="You need to sign in before creating a team."
+              action={
+                <div className="row">
+                  <Link href="/login" className="btn btn-secondary">
+                    Login
+                  </Link>
+                  <Link href="/register" className="btn btn-secondary">
+                    Register
+                  </Link>
+                </div>
+              }
+            />
           ) : (
             <form onSubmit={handleCreateTeam}>
               <div className="form-group">
@@ -191,8 +194,17 @@ export default function TeamsPage() {
                 />
               </div>
 
-              {createError ? <p className="error-text">{createError}</p> : null}
-              {createSuccess ? <p className="success-text">{createSuccess}</p> : null}
+              {createError ? (
+                <Alert variant="error" title="Team creation failed">
+                  {createError}
+                </Alert>
+              ) : null}
+
+              {createSuccess ? (
+                <Alert variant="success" title="Team created">
+                  {createSuccess}
+                </Alert>
+              ) : null}
 
               <button type="submit" disabled={isCreating}>
                 {isCreating ? "Creating..." : "Create team"}
@@ -208,13 +220,21 @@ export default function TeamsPage() {
           </p>
 
           {!authenticated ? (
-            <p>You are not logged in yet.</p>
+            <EmptyState
+              title="You are not logged in"
+              description="Sign in to see the teams you belong to."
+            />
           ) : isLoadingMyTeams ? (
             <p>Loading your teams...</p>
           ) : myTeamsError ? (
-            <p className="error-text">{myTeamsError}</p>
+            <Alert variant="error" title="Failed to load your teams">
+              {myTeamsError}
+            </Alert>
           ) : myTeams.length === 0 ? (
-            <p>You are not a member of any team yet.</p>
+            <EmptyState
+              title="No personal teams yet"
+              description="You are not a member of any team yet."
+            />
           ) : (
             <div className="grid">
               {myTeams.map((team) => (
@@ -256,10 +276,18 @@ export default function TeamsPage() {
         </p>
 
         {isLoadingTeams ? <p>Loading teams...</p> : null}
-        {teamsError ? <p className="error-text">{teamsError}</p> : null}
+
+        {teamsError ? (
+          <Alert variant="error" title="Failed to load teams">
+            {teamsError}
+          </Alert>
+        ) : null}
 
         {!isLoadingTeams && !teamsError && teams.length === 0 ? (
-          <p>No teams have been created yet.</p>
+          <EmptyState
+            title="No teams yet"
+            description="No teams have been created yet."
+          />
         ) : null}
 
         {!isLoadingTeams && !teamsError && teams.length > 0 ? (
@@ -271,7 +299,6 @@ export default function TeamsPage() {
                     <h3>{team.name}</h3>
                     <p>{team.description || "No description provided."}</p>
                   </div>
-
                   <span className="badge">ID: {team.id}</span>
                 </div>
 
