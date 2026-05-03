@@ -7,6 +7,7 @@ import app.modules.users
 import app.modules.teams
 import app.modules.tournaments
 import app.modules.matches
+import app.modules.platform.model
 from app.core.config import settings
 from app.db.base import Base
 

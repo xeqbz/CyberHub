@@ -22,6 +22,7 @@ from app.modules.matches.service import (
     MatchTeamsMustBeDifferentError,
     MatchTournamentNotFoundError,
 )
+from app.modules.platform.service import create_notification, record_action
 from app.modules.teams.repository import TeamRepository
 from app.modules.tournaments.repository import TournamentRepository
 from app.modules.users.model import User
@@ -80,6 +81,27 @@ def create_match(
             detail="Team is not registered in this tournament",
         ) from exc
 
+    notified_owner_ids: set[int] = set()
+    for team in (match.home_team, match.away_team):
+        if team.owner_id in notified_owner_ids:
+            continue
+        notified_owner_ids.add(team.owner_id)
+        create_notification(
+            db,
+            user_id=team.owner_id,
+            title="Match scheduled",
+            message=f"Match #{match.id} was scheduled in {match.tournament.name}.",
+            related_entity_type="match",
+            related_entity_id=match.id,
+        )
+    record_action(
+        db,
+        actor_id=current_user.id,
+        action="match_created",
+        entity_type="match",
+        entity_id=match.id,
+        details={"tournament_id": match.tournament_id},
+    )
     return match
 
 
@@ -183,6 +205,14 @@ def update_match(
             detail=str(exc),
         ) from exc
 
+    record_action(
+        db,
+        actor_id=current_user.id,
+        action="match_updated",
+        entity_type="match",
+        entity_id=match.id,
+        details=payload.model_dump(exclude_unset=True, mode="json"),
+    )
     return match
 
 
@@ -226,6 +256,27 @@ def update_match_score(
             detail=str(exc),
         ) from exc
 
+    notified_owner_ids: set[int] = set()
+    for team in (match.home_team, match.away_team):
+        if team.owner_id in notified_owner_ids:
+            continue
+        notified_owner_ids.add(team.owner_id)
+        create_notification(
+            db,
+            user_id=team.owner_id,
+            title="Match result updated",
+            message=f"Result for match #{match.id} was confirmed.",
+            related_entity_type="match",
+            related_entity_id=match.id,
+        )
+    record_action(
+        db,
+        actor_id=current_user.id,
+        action="match_result_updated",
+        entity_type="match",
+        entity_id=match.id,
+        details=payload.model_dump(),
+    )
     return match
 
 

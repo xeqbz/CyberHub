@@ -1,11 +1,18 @@
+from datetime import UTC, datetime
+
 from app.modules.teams.repository import TeamRepository
 from app.modules.tournaments.model import (
     Tournament,
     TournamentParticipant,
+    TournamentParticipantStatus,
     TournamentStatus,
 )
 from app.modules.tournaments.repository import TournamentRepository
-from app.modules.tournaments.schemas import TournamentCreate, TournamentUpdate
+from app.modules.tournaments.schemas import (
+    TournamentCreate,
+    TournamentParticipantReview,
+    TournamentUpdate,
+)
 
 
 class TournamentError(Exception):
@@ -37,6 +44,10 @@ class TournamentParticipantNotFoundError(TournamentError):
 
 
 class TournamentCapacityExceededError(TournamentError):
+    pass
+
+
+class TournamentLockedError(TournamentError):
     pass
 
 
@@ -89,6 +100,10 @@ class TournamentService:
             description=data.description,
             status=data.status,
             owner_id=owner_id,
+            format=data.format,
+            discipline=data.discipline,
+            rules=data.rules,
+            bracket_settings=data.bracket_settings,
             max_teams=data.max_teams,
             starts_at=data.starts_at,
         )
@@ -123,10 +138,27 @@ class TournamentService:
                     "max_teams cannot be less than the current number of participants"
                 )
 
+        is_rules_change = any(
+            field in data.model_fields_set
+            for field in {"format", "discipline", "rules", "bracket_settings"}
+        )
+        if is_rules_change and tournament.status in {
+            TournamentStatus.IN_PROGRESS,
+            TournamentStatus.COMPLETED,
+        }:
+            raise TournamentLockedError(
+                "Tournament rules and bracket settings cannot be changed after start"
+            )
+
         updated_tournament = self.repository.update(
             tournament,
             name=normalized_name,
             description=data.description,
+            format=data.format,
+            discipline=data.discipline,
+            rules=data.rules,
+            bracket_settings=data.bracket_settings,
+            bracket_settings_was_provided="bracket_settings" in data.model_fields_set,
             status=data.status,
             max_teams=data.max_teams,
             starts_at=data.starts_at,
@@ -180,9 +212,28 @@ class TournamentService:
                 "Tournament participant limit has been reached"
             )
 
+        participant_status = (
+            TournamentParticipantStatus.APPROVED
+            if tournament.owner_id == acting_user_id
+            else TournamentParticipantStatus.PENDING
+        )
+        decided_by_id = (
+            acting_user_id
+            if participant_status == TournamentParticipantStatus.APPROVED
+            else None
+        )
+        decided_at = (
+            datetime.now(UTC)
+            if participant_status == TournamentParticipantStatus.APPROVED
+            else None
+        )
+
         return self.repository.add_participant(
             tournament_id=tournament.id,
             team_id=team_id,
+            status=participant_status,
+            decided_by_id=decided_by_id,
+            decided_at=decided_at,
         )
 
     def remove_participant(
@@ -210,6 +261,40 @@ class TournamentService:
             )
 
         self.repository.remove_participant(participant)
+
+    def review_participant(
+        self,
+        tournament_id: int,
+        team_id: int,
+        acting_user_id: int,
+        data: TournamentParticipantReview,
+    ) -> TournamentParticipant:
+        tournament = self.get_tournament_or_raise(tournament_id)
+        self._ensure_owner_access(tournament, acting_user_id)
+
+        participant = self.repository.get_participant(
+            tournament_id=tournament.id,
+            team_id=team_id,
+        )
+        if participant is None:
+            raise TournamentParticipantNotFoundError("Tournament participant not found")
+
+        if data.status == TournamentParticipantStatus.APPROVED:
+            current_participants = self.repository.count_participants(tournament.id)
+            if (
+                participant.status != TournamentParticipantStatus.APPROVED
+                and current_participants >= tournament.max_teams
+            ):
+                raise TournamentCapacityExceededError(
+                    "Tournament participant limit has been reached"
+                )
+
+        return self.repository.update_participant(
+            participant,
+            status=data.status,
+            decided_by_id=acting_user_id,
+            decided_at=datetime.now(UTC),
+        )
 
     @staticmethod
     def _ensure_owner_access(tournament: Tournament, acting_user_id: int) -> None:

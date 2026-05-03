@@ -1,7 +1,15 @@
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy import Enum as SqlEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -19,6 +27,12 @@ class TournamentStatus(str, Enum):
     CANCELLED = "CANCELLED"
 
 
+class TournamentParticipantStatus(str, Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
 class Tournament(BaseModel):
     __tablename__ = "tournaments"
 
@@ -30,6 +44,25 @@ class Tournament(BaseModel):
     )
     description: Mapped[str | None] = mapped_column(
         Text,
+        nullable=True,
+    )
+    format: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        default="single_elimination",
+    )
+    discipline: Mapped[str] = mapped_column(
+        String(120),
+        nullable=False,
+        default="CS2",
+    )
+    rules: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="Standard competitive rules",
+    )
+    bracket_settings: Mapped[dict | None] = mapped_column(
+        JSON,
         nullable=True,
     )
     status: Mapped[TournamentStatus] = mapped_column(
@@ -83,6 +116,23 @@ class TournamentParticipant(BaseModel):
         nullable=False,
         index=True,
     )
+    status: Mapped[TournamentParticipantStatus] = mapped_column(
+        SqlEnum(
+            TournamentParticipantStatus,
+            name="tournament_participant_status",
+        ),
+        nullable=False,
+        default=TournamentParticipantStatus.PENDING,
+    )
+    decided_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     tournament: Mapped[Tournament] = relationship(
         "Tournament",
@@ -91,4 +141,8 @@ class TournamentParticipant(BaseModel):
     team: Mapped[Team] = relationship(
         "Team",
         foreign_keys=[team_id],
+    )
+    decided_by: Mapped[User | None] = relationship(
+        "User",
+        foreign_keys=[decided_by_id],
     )

@@ -11,9 +11,14 @@ export type MatchListItem = {
   away_team_id: number;
   status: MatchStatus;
   scheduled_at: string | null;
+  completed_at: string | null;
+  stage: string;
+  round_number: number;
+  bracket_position: number;
   home_score: number | null;
   away_score: number | null;
   winner_team_id: number | null;
+  result_confirmed_by_id: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -25,9 +30,14 @@ export type MatchRead = {
   away_team_id: number;
   status: MatchStatus;
   scheduled_at: string | null;
+  completed_at: string | null;
+  stage: string;
+  round_number: number;
+  bracket_position: number;
   home_score: number | null;
   away_score: number | null;
   winner_team_id: number | null;
+  result_confirmed_by_id: number | null;
   created_at: string;
   updated_at: string;
   tournament: TournamentListItem;
@@ -41,11 +51,17 @@ export type CreateMatchPayload = {
   home_team_id: number;
   away_team_id: number;
   scheduled_at?: string | null;
+  stage?: string;
+  round_number?: number;
+  bracket_position?: number;
 };
 
 export type UpdateMatchPayload = {
   status?: string;
   scheduled_at?: string | null;
+  stage?: string;
+  round_number?: number;
+  bracket_position?: number;
   home_score?: number | null;
   away_score?: number | null;
   winner_team_id?: number | null;

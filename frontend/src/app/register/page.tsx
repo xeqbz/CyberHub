@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { apiRequest } from "@/src/shared/api/client";
@@ -12,7 +12,7 @@ import {
   type TokenPair,
 } from "@/src/shared/lib/auth";
 
-export default function RegisterPage() {
+function RegisterContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -24,6 +24,7 @@ export default function RegisterPage() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState<"USER" | "ORGANIZER">("USER");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -41,7 +42,7 @@ export default function RegisterPage() {
     try {
       const data = await apiRequest<TokenPair>("/auth/register", {
         method: "POST",
-        body: { username, email, password },
+        body: { username, email, password, role },
       });
 
       saveTokens(data);
@@ -103,6 +104,20 @@ export default function RegisterPage() {
             />
           </div>
 
+          <div className="form-group">
+            <label htmlFor="role">Account type</label>
+            <select
+              id="role"
+              value={role}
+              onChange={(event) =>
+                setRole(event.target.value as "USER" | "ORGANIZER")
+              }
+            >
+              <option value="USER">Player</option>
+              <option value="ORGANIZER">Organizer</option>
+            </select>
+          </div>
+
           {error ? <p className="error-text">{error}</p> : null}
 
           <button type="submit" disabled={isLoading}>
@@ -112,11 +127,31 @@ export default function RegisterPage() {
 
         <div className="auth-footer">
           Already have an account?{" "}
-          <Link href={`/login${nextPath !== "/" ? `?next=${encodeURIComponent(nextPath)}` : ""}`}>
+          <Link
+            href={`/login${
+              nextPath !== "/" ? `?next=${encodeURIComponent(nextPath)}` : ""
+            }`}
+          >
             Login
           </Link>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="auth-layout">
+          <div className="auth-card">
+            <h1 className="auth-title">Register</h1>
+          </div>
+        </div>
+      }
+    >
+      <RegisterContent />
+    </Suspense>
   );
 }

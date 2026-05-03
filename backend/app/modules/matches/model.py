@@ -1,13 +1,14 @@
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String
 from sqlalchemy import Enum as SqlEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import BaseModel
 from app.modules.teams.model import Team
 from app.modules.tournaments.model import Tournament
+from app.modules.users.model import User
 
 
 class MatchStatus(str, Enum):
@@ -51,6 +52,25 @@ class Match(BaseModel):
         DateTime(timezone=True),
         nullable=True,
     )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    stage: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        default="Main bracket",
+    )
+    round_number: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+    )
+    bracket_position: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+    )
 
     home_score: Mapped[int | None] = mapped_column(
         Integer,
@@ -63,6 +83,11 @@ class Match(BaseModel):
 
     winner_team_id: Mapped[int | None] = mapped_column(
         ForeignKey("teams.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    result_confirmed_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -82,4 +107,8 @@ class Match(BaseModel):
     winner_team: Mapped[Team | None] = relationship(
         "Team",
         foreign_keys=[winner_team_id],
+    )
+    result_confirmed_by: Mapped[User | None] = relationship(
+        "User",
+        foreign_keys=[result_confirmed_by_id],
     )

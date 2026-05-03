@@ -1,6 +1,6 @@
 from enum import Enum
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, Integer, String
 from sqlalchemy import Enum as SqlEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -40,5 +40,25 @@ class User(BaseModel):
     role: Mapped[UserRole] = mapped_column(
         SqlEnum(UserRole, name="user_role"),
         default=UserRole.USER,
+        nullable=False,
+    )
+    rating: Mapped[int] = mapped_column(
+        Integer,
+        default=1000,
+        nullable=False,
+    )
+    wins: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    losses: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    draws: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
         nullable=False,
     )

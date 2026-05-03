@@ -1,8 +1,10 @@
+from datetime import UTC, datetime
+
 from app.modules.matches.model import Match, MatchStatus
 from app.modules.matches.repository import MatchRepository
 from app.modules.matches.schemas import MatchCreate, MatchScoreUpdate, MatchUpdate
 from app.modules.teams.repository import TeamRepository
-from app.modules.tournaments.model import Tournament
+from app.modules.tournaments.model import Tournament, TournamentParticipantStatus
 from app.modules.tournaments.repository import TournamentRepository
 
 
@@ -90,6 +92,9 @@ class MatchService:
             away_team_id=data.away_team_id,
             status=MatchStatus.SCHEDULED,
             scheduled_at=data.scheduled_at,
+            stage=data.stage.strip(),
+            round_number=data.round_number,
+            bracket_position=data.bracket_position,
             home_score=None,
             away_score=None,
             winner_team_id=None,
@@ -107,7 +112,9 @@ class MatchService:
         tournament = self._get_tournament_or_raise(match.tournament_id)
         self._ensure_tournament_owner_access(tournament, acting_user_id)
 
-        winner_team_id = data.winner_team_id
+        winner_team_id = (
+            match.winner_team_id if data.winner_team_id is None else data.winner_team_id
+        )
         status = data.status
 
         home_score = match.home_score if data.home_score is None else data.home_score
@@ -137,13 +144,27 @@ class MatchService:
         ):
             raise MatchInvalidScoreError("Completed match must have both scores")
 
+        completed_at_was_provided = False
+        completed_at = None
+        result_confirmed_by_id = None
+        if status == MatchStatus.COMPLETED:
+            completed_at_was_provided = True
+            completed_at = datetime.now(UTC)
+            result_confirmed_by_id = acting_user_id
+
         updated_match = self.repository.update(
             match,
             status=status,
             scheduled_at=data.scheduled_at,
+            stage=data.stage.strip() if data.stage is not None else None,
+            round_number=data.round_number,
+            bracket_position=data.bracket_position,
             home_score=data.home_score,
             away_score=data.away_score,
             winner_team_id=winner_team_id,
+            result_confirmed_by_id=result_confirmed_by_id,
+            completed_at=completed_at,
+            completed_at_was_provided=completed_at_was_provided,
         )
 
         return self.get_match_or_raise(updated_match.id)
@@ -172,6 +193,9 @@ class MatchService:
             home_score=data.home_score,
             away_score=data.away_score,
             winner_team_id=winner_team_id,
+            result_confirmed_by_id=acting_user_id,
+            completed_at=datetime.now(UTC),
+            completed_at_was_provided=True,
         )
 
         return self.get_match_or_raise(updated_match.id)
@@ -211,7 +235,10 @@ class MatchService:
             tournament_id=tournament_id,
             team_id=team_id,
         )
-        if participant is None:
+        if (
+            participant is None
+            or participant.status != TournamentParticipantStatus.APPROVED
+        ):
             raise MatchTeamNotInTournamentError(
                 "Team is not registered in this tournament"
             )

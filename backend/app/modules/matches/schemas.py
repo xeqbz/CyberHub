@@ -12,6 +12,9 @@ class MatchBase(BaseModel):
     home_team_id: int = Field(..., ge=1)
     away_team_id: int = Field(..., ge=1)
     scheduled_at: datetime | None = None
+    stage: str = Field(default="Main bracket", min_length=1, max_length=80)
+    round_number: int = Field(default=1, ge=1)
+    bracket_position: int = Field(default=1, ge=1)
 
     @staticmethod
     def _validate_teams(home_team_id: int, away_team_id: int) -> None:
@@ -27,6 +30,9 @@ class MatchCreate(MatchBase):
 class MatchUpdate(BaseModel):
     status: MatchStatus | None = None
     scheduled_at: datetime | None = None
+    stage: str | None = Field(default=None, min_length=1, max_length=80)
+    round_number: int | None = Field(default=None, ge=1)
+    bracket_position: int | None = Field(default=None, ge=1)
     home_score: int | None = Field(default=None, ge=0)
     away_score: int | None = Field(default=None, ge=0)
     winner_team_id: int | None = Field(default=None, ge=1)
@@ -47,9 +53,14 @@ class MatchRead(BaseModel):
     away_team_id: int
     status: MatchStatus
     scheduled_at: datetime | None
+    completed_at: datetime | None
+    stage: str
+    round_number: int
+    bracket_position: int
     home_score: int | None
     away_score: int | None
     winner_team_id: int | None
+    result_confirmed_by_id: int | None
     created_at: datetime
     updated_at: datetime
 
@@ -68,8 +79,13 @@ class MatchListItem(BaseModel):
     away_team_id: int
     status: MatchStatus
     scheduled_at: datetime | None
+    completed_at: datetime | None
+    stage: str
+    round_number: int
+    bracket_position: int
     home_score: int | None
     away_score: int | None
     winner_team_id: int | None
+    result_confirmed_by_id: int | None
     created_at: datetime
     updated_at: datetime

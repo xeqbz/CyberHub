@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import app.modules.matches.model
+import app.modules.platform.model
 import app.modules.teams.model
 import app.modules.tournaments.model
 import app.modules.users.model

@@ -12,6 +12,8 @@ function getStatusClass(value: string): string {
   if (
     normalized === "completed" ||
     normalized === "active" ||
+    normalized === "approved" ||
+    normalized === "resolved" ||
     normalized === "registration_open" ||
     normalized === "finished"
   ) {
@@ -20,6 +22,7 @@ function getStatusClass(value: string): string {
 
   if (
     normalized === "cancelled" ||
+    normalized === "rejected" ||
     normalized === "failed" ||
     normalized === "error"
   ) {
@@ -28,6 +31,8 @@ function getStatusClass(value: string): string {
 
   if (
     normalized === "in_progress" ||
+    normalized === "open" ||
+    normalized === "pending" ||
     normalized === "scheduled" ||
     normalized === "registration_closed"
   ) {

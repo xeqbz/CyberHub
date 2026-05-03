@@ -6,6 +6,10 @@ export type CurrentUser = {
   email: string;
   is_active: boolean;
   role: string;
+  rating: number;
+  wins: number;
+  losses: number;
+  draws: number;
   created_at: string;
   updated_at: string;
 };

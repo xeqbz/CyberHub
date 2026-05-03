@@ -107,6 +107,7 @@ Examples:
 
 ### Users
 - current user endpoint
+- rating, wins, losses and draws
 
 ### Teams
 - CRUD for teams
@@ -116,11 +117,22 @@ Examples:
 ### Tournaments
 - CRUD for tournaments
 - tournament participants management
+- participant application review
+- discipline, format, rules and bracket settings
 
 ### Matches
 - CRUD for matches
 - score update
 - list by tournament
+
+### Platform
+- rankings and statistics
+- ranked matchmaking and ELO recalculation
+- notifications
+- match disputes
+- admin user management
+- action log
+- CSV report export
 
 ## Notes
 

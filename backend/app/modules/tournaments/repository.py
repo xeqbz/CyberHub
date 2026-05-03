@@ -1,7 +1,11 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.modules.tournaments.model import Tournament, TournamentParticipant
+from app.modules.tournaments.model import (
+    Tournament,
+    TournamentParticipant,
+    TournamentParticipantStatus,
+)
 
 
 class TournamentRepository:
@@ -56,6 +60,10 @@ class TournamentRepository:
         description: str | None,
         status,
         owner_id: int,
+        format: str,
+        discipline: str,
+        rules: str,
+        bracket_settings: dict | None,
         max_teams: int,
         starts_at,
     ) -> Tournament:
@@ -64,6 +72,10 @@ class TournamentRepository:
             description=description,
             status=status,
             owner_id=owner_id,
+            format=format,
+            discipline=discipline,
+            rules=rules,
+            bracket_settings=bracket_settings,
             max_teams=max_teams,
             starts_at=starts_at,
         )
@@ -78,6 +90,11 @@ class TournamentRepository:
         *,
         name: str | None = None,
         description: str | None = None,
+        format: str | None = None,
+        discipline: str | None = None,
+        rules: str | None = None,
+        bracket_settings: dict | None = None,
+        bracket_settings_was_provided: bool = False,
         status=None,
         max_teams: int | None = None,
         starts_at=None,
@@ -86,6 +103,14 @@ class TournamentRepository:
             tournament.name = name
         if description is not None:
             tournament.description = description
+        if format is not None:
+            tournament.format = format
+        if discipline is not None:
+            tournament.discipline = discipline
+        if rules is not None:
+            tournament.rules = rules
+        if bracket_settings_was_provided:
+            tournament.bracket_settings = bracket_settings
         if status is not None:
             tournament.status = status
         if max_teams is not None:
@@ -126,7 +151,8 @@ class TournamentRepository:
 
     def count_participants(self, tournament_id: int) -> int:
         stmt = select(TournamentParticipant).where(
-            TournamentParticipant.tournament_id == tournament_id
+            TournamentParticipant.tournament_id == tournament_id,
+            TournamentParticipant.status == TournamentParticipantStatus.APPROVED,
         )
         return len(list(self.db.scalars(stmt).all()))
 
@@ -135,11 +161,34 @@ class TournamentRepository:
         *,
         tournament_id: int,
         team_id: int,
+        status: TournamentParticipantStatus,
+        decided_by_id: int | None = None,
+        decided_at=None,
     ) -> TournamentParticipant:
         participant = TournamentParticipant(
             tournament_id=tournament_id,
             team_id=team_id,
+            status=status,
+            decided_by_id=decided_by_id,
+            decided_at=decided_at,
         )
+        self.db.add(participant)
+        self.db.commit()
+        self.db.refresh(participant)
+        return participant
+
+    def update_participant(
+        self,
+        participant: TournamentParticipant,
+        *,
+        status: TournamentParticipantStatus,
+        decided_by_id: int,
+        decided_at,
+    ) -> TournamentParticipant:
+        participant.status = status
+        participant.decided_by_id = decided_by_id
+        participant.decided_at = decided_at
+
         self.db.add(participant)
         self.db.commit()
         self.db.refresh(participant)

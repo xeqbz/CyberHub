@@ -51,6 +51,7 @@ class UserService:
             email=data.email.lower(),
             hashed_password=hashed_password,
             is_active=True,
+            role=data.role,
         )
 
     def update_current_user(self, user_id: int, data: UserUpdate) -> User:
@@ -79,4 +80,34 @@ class UserService:
             user,
             username=username,
             email=email,
+        )
+
+    def update_user(self, user_id: int, data: UserUpdate) -> User:
+        user = self.repository.get_by_id(user_id)
+        if user is None:
+            raise UserNotFoundError("User not found")
+
+        username = data.username.strip() if data.username is not None else None
+        email = data.email.lower() if data.email is not None else None
+
+        if username is not None and username != user.username:
+            existing_by_username = self.repository.get_by_username(username)
+            if existing_by_username is not None and existing_by_username.id != user.id:
+                raise UsernameAlreadyExistsError(
+                    f"Username '{data.username}' is already in use."
+                )
+
+        if email is not None and email != user.email:
+            existing_by_email = self.repository.get_by_email(email)
+            if existing_by_email is not None and existing_by_email.id != user.id:
+                raise EmailAlreadyExistsError(
+                    f"Email '{data.email}' is already in use."
+                )
+
+        return self.repository.update(
+            user,
+            username=username,
+            email=email,
+            is_active=data.is_active,
+            role=data.role,
         )

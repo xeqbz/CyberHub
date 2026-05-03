@@ -3,13 +3,16 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.auth.dependencies import get_current_active_user
+from app.modules.platform.service import create_notification, record_action
 from app.modules.teams.repository import TeamRepository
+from app.modules.tournaments.model import TournamentParticipantStatus
 from app.modules.tournaments.repository import TournamentRepository
 from app.modules.tournaments.schemas import (
     TournamentCreate,
     TournamentListItem,
     TournamentParticipantCreate,
     TournamentParticipantRead,
+    TournamentParticipantReview,
     TournamentRead,
     TournamentUpdate,
 )
@@ -17,6 +20,7 @@ from app.modules.tournaments.service import (
     TournamentAccessDeniedError,
     TournamentAlreadyExistsError,
     TournamentCapacityExceededError,
+    TournamentLockedError,
     TournamentNotFoundError,
     TournamentParticipantAlreadyExistsError,
     TournamentParticipantNotFoundError,
@@ -56,6 +60,14 @@ def create_tournament(
             detail="Tournament with this name already exists",
         ) from exc
 
+    record_action(
+        db,
+        actor_id=current_user.id,
+        action="tournament_created",
+        entity_type="tournament",
+        entity_id=tournament.id,
+        details={"name": tournament.name, "status": tournament.status},
+    )
     return tournament
 
 
@@ -133,7 +145,20 @@ def update_tournament(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
+    except TournamentLockedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
 
+    record_action(
+        db,
+        actor_id=current_user.id,
+        action="tournament_updated",
+        entity_type="tournament",
+        entity_id=tournament.id,
+        details=payload.model_dump(exclude_unset=True, mode="json"),
+    )
     return tournament
 
 
@@ -201,7 +226,7 @@ def add_tournament_participant(
     service = get_tournament_service(db)
 
     try:
-        return service.add_participant(
+        participant = service.add_participant(
             tournament_id=tournament_id,
             team_id=payload.team_id,
             acting_user_id=current_user.id,
@@ -236,6 +261,37 @@ def add_tournament_participant(
             status_code=status.HTTP_409_CONFLICT,
             detail="Tournament participant limit has been reached",
         ) from exc
+
+    tournament = service.get_tournament_by_id(tournament_id)
+    if tournament is not None:
+        if participant.status == TournamentParticipantStatus.PENDING:
+            create_notification(
+                db,
+                user_id=tournament.owner_id,
+                title="New tournament application",
+                message=f"Team {participant.team.name} applied to {tournament.name}.",
+                related_entity_type="tournament",
+                related_entity_id=tournament.id,
+            )
+        else:
+            create_notification(
+                db,
+                user_id=participant.team.owner_id,
+                title="Tournament registration approved",
+                message=f"Team {participant.team.name} joined {tournament.name}.",
+                related_entity_type="tournament",
+                related_entity_id=tournament.id,
+            )
+
+    record_action(
+        db,
+        actor_id=current_user.id,
+        action="tournament_participant_registered",
+        entity_type="tournament_participant",
+        entity_id=participant.id,
+        details={"status": participant.status},
+    )
+    return participant
 
 
 @router.delete(
@@ -278,3 +334,70 @@ def remove_tournament_participant(
         ) from exc
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch(
+    "/{tournament_id}/participants/{team_id}",
+    response_model=TournamentParticipantRead,
+    status_code=status.HTTP_200_OK,
+)
+def review_tournament_participant(
+    tournament_id: int,
+    team_id: int,
+    payload: TournamentParticipantReview,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> TournamentParticipantRead:
+    service = get_tournament_service(db)
+
+    try:
+        participant = service.review_participant(
+            tournament_id=tournament_id,
+            team_id=team_id,
+            acting_user_id=current_user.id,
+            data=payload,
+        )
+    except TournamentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tournament not found",
+        ) from exc
+    except TournamentParticipantNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tournament participant not found",
+        ) from exc
+    except TournamentAccessDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only tournament owner can perform this action",
+        ) from exc
+    except TournamentCapacityExceededError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tournament participant limit has been reached",
+        ) from exc
+
+    tournament = service.get_tournament_by_id(tournament_id)
+    if tournament is not None:
+        create_notification(
+            db,
+            user_id=participant.team.owner_id,
+            title="Tournament application reviewed",
+            message=(
+                f"Application for {participant.team.name} in {tournament.name} "
+                f"was marked as {participant.status}."
+            ),
+            related_entity_type="tournament",
+            related_entity_id=tournament.id,
+        )
+
+    record_action(
+        db,
+        actor_id=current_user.id,
+        action="tournament_participant_reviewed",
+        entity_type="tournament_participant",
+        entity_id=participant.id,
+        details={"status": participant.status},
+    )
+    return participant

@@ -59,9 +59,14 @@ class MatchRepository:
         away_team_id: int,
         status,
         scheduled_at,
+        stage: str,
+        round_number: int,
+        bracket_position: int,
         home_score: int | None = None,
         away_score: int | None = None,
         winner_team_id: int | None = None,
+        result_confirmed_by_id: int | None = None,
+        completed_at=None,
     ) -> Match:
         match = Match(
             tournament_id=tournament_id,
@@ -69,9 +74,14 @@ class MatchRepository:
             away_team_id=away_team_id,
             status=status,
             scheduled_at=scheduled_at,
+            stage=stage,
+            round_number=round_number,
+            bracket_position=bracket_position,
             home_score=home_score,
             away_score=away_score,
             winner_team_id=winner_team_id,
+            result_confirmed_by_id=result_confirmed_by_id,
+            completed_at=completed_at,
         )
         self.db.add(match)
         self.db.commit()
@@ -84,20 +94,36 @@ class MatchRepository:
         *,
         status=None,
         scheduled_at=None,
+        stage: str | None = None,
+        round_number: int | None = None,
+        bracket_position: int | None = None,
         home_score: int | None = None,
         away_score: int | None = None,
         winner_team_id: int | None = None,
+        result_confirmed_by_id: int | None = None,
+        completed_at=None,
+        completed_at_was_provided: bool = False,
     ) -> Match:
         if status is not None:
             match.status = status
         if scheduled_at is not None:
             match.scheduled_at = scheduled_at
+        if stage is not None:
+            match.stage = stage
+        if round_number is not None:
+            match.round_number = round_number
+        if bracket_position is not None:
+            match.bracket_position = bracket_position
         if home_score is not None:
             match.home_score = home_score
         if away_score is not None:
             match.away_score = away_score
 
         match.winner_team_id = winner_team_id
+        if result_confirmed_by_id is not None:
+            match.result_confirmed_by_id = result_confirmed_by_id
+        if completed_at_was_provided:
+            match.completed_at = completed_at
 
         self.db.add(match)
         self.db.commit()

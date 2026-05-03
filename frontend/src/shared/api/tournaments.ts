@@ -13,6 +13,10 @@ export type TournamentListItem = {
   id: number;
   name: string;
   description: string | null;
+  format: string;
+  discipline: string;
+  rules: string;
+  bracket_settings: Record<string, unknown> | null;
   status: TournamentStatus;
   owner_id: number;
   max_teams: number;
@@ -25,6 +29,9 @@ export type TournamentParticipant = {
   id: number;
   tournament_id: number;
   team_id: number;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  decided_by_id: number | null;
+  decided_at: string | null;
   created_at: string;
   updated_at: string;
   team: TeamListItem;
@@ -34,6 +41,10 @@ export type TournamentRead = {
   id: number;
   name: string;
   description: string | null;
+  format: string;
+  discipline: string;
+  rules: string;
+  bracket_settings: Record<string, unknown> | null;
   status: TournamentStatus;
   owner_id: number;
   max_teams: number;
@@ -47,6 +58,10 @@ export type TournamentRead = {
 export type CreateTournamentPayload = {
   name: string;
   description?: string;
+  format?: string;
+  discipline?: string;
+  rules?: string;
+  bracket_settings?: Record<string, unknown> | null;
   status?: TournamentStatus;
   max_teams?: number;
   starts_at?: string | null;
@@ -106,4 +121,20 @@ export async function removeTeamFromTournament(
     method: "DELETE",
     token,
   });
+}
+
+export async function reviewTournamentParticipant(
+  tournamentId: number,
+  teamId: number,
+  participantStatus: "APPROVED" | "REJECTED",
+  token: string,
+): Promise<TournamentParticipant> {
+  return apiRequest<TournamentParticipant>(
+    `/tournaments/${tournamentId}/participants/${teamId}`,
+    {
+      method: "PATCH",
+      body: { status: participantStatus },
+      token,
+    },
+  );
 }

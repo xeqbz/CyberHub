@@ -2,12 +2,13 @@
 
 CyberHub is a diploma project focused on building a web platform for esports tournaments and competitive matches.
 
-The platform is designed to give players, team owners and organizers a single environment for:
+The platform gives players, team owners, organizers and administrators a single environment for:
 - authentication and user management,
 - team and roster management,
 - tournament creation and participation,
 - match creation and result handling,
-- further expansion toward rating, statistics, moderation and real-time updates.
+- ranked matches and ELO rating,
+- statistics, disputes, notifications, moderation and reports.
 
 At this stage, the project already contains a working backend foundation **and** a connected frontend with core user flows.
 
@@ -22,7 +23,7 @@ The diploma scope describes CyberHub as a unified environment for:
 - tournament creation and management,
 - match handling and result tracking,
 - statistics visibility,
-- further growth toward ranked scenarios and broader competitive tooling.
+- ranked scenarios, moderation and broader competitive tooling.
 
 ---
 
@@ -36,6 +37,7 @@ Implemented and working:
   - refresh token
 - users:
   - current user endpoint
+  - player rating fields and ranked results
 - teams:
   - create, update, delete
   - list all teams
@@ -45,12 +47,27 @@ Implemented and working:
   - create, update, delete
   - list tournaments
   - register/remove tournament participants
+  - participant application review
+  - format, discipline, rules and bracket settings
   - update tournament status
 - matches:
   - create, update, delete
   - list all matches
   - list matches by tournament
   - update match score and winner
+- ranked:
+  - matchmaking requests
+  - ranked match creation
+  - ranked result submission
+  - ELO recalculation
+- platform:
+  - rankings
+  - team and tournament statistics
+  - notifications
+  - match result disputes
+  - admin user management
+  - audit/action log
+  - CSV report export
 - infrastructure:
   - PostgreSQL
   - Redis
@@ -81,6 +98,7 @@ Implemented and already connected to backend API:
 - tournament details page:
   - view participants
   - register a team
+  - approve/reject applications
   - remove a team
   - change tournament status
   - create match inside tournament
@@ -96,6 +114,13 @@ Implemented and already connected to backend API:
   - my teams
   - my tournaments
   - my matches
+- ranked, rankings and statistics pages
+- disputes and notifications pages
+- admin page:
+  - manage users
+  - resolve disputes
+  - inspect action logs
+  - export CSV reports
 - shared UI and navigation:
   - top navigation/header
   - alert components
@@ -103,16 +128,11 @@ Implemented and already connected to backend API:
   - status badges
   - shared API client
 
-### Planned / next scope
-The diploma concept also allows further expansion of the platform toward:
-- rating / ranked logic,
-- extended player and team statistics,
-- notifications,
-- dispute handling and moderation,
-- audit log / admin tooling,
-- richer real-time updates with WebSocket.
-
-These parts are part of the broader product direction, but they are **not fully implemented in the current dev branch yet**.
+### Remaining growth scope
+The implemented branch now covers the diploma's core platform flows. The next
+natural growth area is deeper real-time delivery through WebSocket channels and
+more advanced tournament bracket generation for double-elimination and Swiss
+formats.
 
 ---
 

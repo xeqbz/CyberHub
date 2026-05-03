@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.modules.users.model import User
+from app.modules.users.model import User, UserRole
 
 
 class UserRepository:
@@ -21,7 +21,7 @@ class UserRepository:
         return self.db.scalar(stmt)
 
     def list_users(self, offset: int = 0, limit: int = 100) -> list[User]:
-        stmt = select(User).offset(offset).limit(limit)
+        stmt = select(User).order_by(User.id).offset(offset).limit(limit)
         return list(self.db.scalars(stmt).all())
 
     def create(
@@ -31,12 +31,14 @@ class UserRepository:
         email: str,
         hashed_password: str,
         is_active: bool = True,
+        role: UserRole = UserRole.USER,
     ) -> User:
         user = User(
             username=username,
             email=email,
             hashed_password=hashed_password,
             is_active=is_active,
+            role=role,
         )
         self.db.add(user)
         self.db.commit()
@@ -49,12 +51,24 @@ class UserRepository:
         *,
         username: str | None = None,
         email: str | None = None,
+        is_active: bool | None = None,
+        role: UserRole | None = None,
+        rating: int | None = None,
     ) -> User:
         if username is not None:
             user.username = username
 
         if email is not None:
             user.email = email
+
+        if is_active is not None:
+            user.is_active = is_active
+
+        if role is not None:
+            user.role = role
+
+        if rating is not None:
+            user.rating = rating
 
         self.db.add(user)
         self.db.commit()

@@ -223,7 +223,7 @@ export default function DashboardPage() {
         />
       ) : null}
 
-      {dashboardReady ? (
+      {dashboardReady && currentUser ? (
         <>
           <section
             className="grid grid-2"

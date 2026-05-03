@@ -22,6 +22,14 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=8, max_length=128)
+    role: UserRole = UserRole.USER
+
+    @field_validator("role")
+    @classmethod
+    def disallow_public_admin_registration(cls, value: UserRole) -> UserRole:
+        if value == UserRole.ADMIN:
+            raise ValueError("Admin role cannot be selected during registration")
+        return value
 
 
 class UserLogin(BaseModel):
@@ -63,6 +71,10 @@ class UserRead(BaseModel):
     email: EmailStr
     is_active: bool
     role: UserRole
+    rating: int
+    wins: int
+    losses: int
+    draws: int
     created_at: datetime
     updated_at: datetime
 

@@ -8,8 +8,8 @@ from app.modules.users.repository import UserRepository
 from app.modules.users.schemas import UserRead, UserUpdate
 from app.modules.users.service import (
     EmailAlreadyExistsError,
-    UserService,
     UsernameAlreadyExistsError,
+    UserService,
 )
 
 router = APIRouter(prefix="/users", tags=["users"])

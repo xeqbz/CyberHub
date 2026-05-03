@@ -1,5 +1,5 @@
-from functools import lru_cache
 import json
+from functools import lru_cache
 from typing import Annotated
 
 from pydantic import field_validator
@@ -63,7 +63,11 @@ class Settings(BaseSettings):
                     pass
                 else:
                     if isinstance(parsed, list):
-                        return [str(item).strip() for item in parsed if str(item).strip()]
+                        return [
+                            str(item).strip()
+                            for item in parsed
+                            if str(item).strip()
+                        ]
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
 

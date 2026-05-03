@@ -18,6 +18,7 @@ import {
   getTournament,
   registerTeamForTournament,
   removeTeamFromTournament,
+  reviewTournamentParticipant,
   updateTournament,
   type TournamentRead,
   type TournamentStatus,
@@ -44,16 +45,6 @@ function formatDate(value: string | null): string {
   if (Number.isNaN(date.getTime())) return value;
 
   return date.toLocaleString();
-}
-
-function formatDateTimeLocal(value: string | null): string {
-  if (!value) return "";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 16);
 }
 
 function sortMatches(matches: MatchRead[]): MatchRead[] {
@@ -91,6 +82,8 @@ export default function TournamentDetailsPage() {
 
   const [removeError, setRemoveError] = useState("");
   const [isRemovingTeamId, setIsRemovingTeamId] = useState<number | null>(null);
+  const [reviewError, setReviewError] = useState("");
+  const [busyReviewTeamId, setBusyReviewTeamId] = useState<number | null>(null);
 
   const [statusError, setStatusError] = useState("");
   const [statusSuccess, setStatusSuccess] = useState("");
@@ -216,6 +209,31 @@ export default function TournamentDetailsPage() {
     }
   }
 
+  async function handleReviewParticipant(
+    teamId: number,
+    nextStatus: "APPROVED" | "REJECTED",
+  ) {
+    const token = getAccessToken();
+    if (!token) {
+      setReviewError("You need to login before reviewing applications");
+      return;
+    }
+
+    setReviewError("");
+    setBusyReviewTeamId(teamId);
+
+    try {
+      await reviewTournamentParticipant(tournamentId, teamId, nextStatus, token);
+      await refreshTournamentData();
+    } catch (error) {
+      setReviewError(
+        error instanceof Error ? error.message : "Failed to review application",
+      );
+    } finally {
+      setBusyReviewTeamId(null);
+    }
+  }
+
   async function handleStatusChange(nextStatus: TournamentStatus) {
     const token = getAccessToken();
     if (!token) {
@@ -298,16 +316,19 @@ export default function TournamentDetailsPage() {
 
   const participantTeams = useMemo(() => {
     if (!tournament) return [];
-    return tournament.participants.map((participant) => participant.team);
+    return tournament.participants
+      .filter((participant) => participant.status === "APPROVED")
+      .map((participant) => participant.team);
   }, [tournament]);
 
-  const participantTeamIds = useMemo(() => {
-    return new Set(participantTeams.map((team) => team.id));
-  }, [participantTeams]);
+  const allParticipantTeamIds = useMemo(() => {
+    if (!tournament) return new Set<number>();
+    return new Set(tournament.participants.map((participant) => participant.team_id));
+  }, [tournament]);
 
   const availableMyTeams = useMemo(() => {
-    return myTeams.filter((team) => !participantTeamIds.has(team.id));
-  }, [myTeams, participantTeamIds]);
+    return myTeams.filter((team) => !allParticipantTeamIds.has(team.id));
+  }, [myTeams, allParticipantTeamIds]);
 
   const sortedMatches = useMemo(() => {
     return sortMatches(tournamentMatches);
@@ -435,6 +456,21 @@ export default function TournamentDetailsPage() {
                 </div>
 
                 <div>
+                  <p className="muted">Discipline</p>
+                  <strong>{tournament.discipline}</strong>
+                </div>
+
+                <div>
+                  <p className="muted">Format</p>
+                  <strong>{tournament.format}</strong>
+                </div>
+
+                <div>
+                  <p className="muted">Rules</p>
+                  <p>{tournament.rules}</p>
+                </div>
+
+                <div>
                   <p className="muted">Starts at</p>
                   <p>{formatDate(tournament.starts_at)}</p>
                 </div>
@@ -475,7 +511,7 @@ export default function TournamentDetailsPage() {
                 <div className="card" style={{ padding: "16px" }}>
                   <p className="muted">Available slots</p>
                   <strong>
-                    {Math.max(tournament.max_teams - tournament.participants.length, 0)}
+                    {Math.max(tournament.max_teams - participantTeams.length, 0)}
                   </strong>
                 </div>
               </div>
@@ -626,16 +662,24 @@ export default function TournamentDetailsPage() {
             >
               <div>
                 <h2>Participants</h2>
-                <p className="muted">Current registered teams in this tournament.</p>
+                <p className="muted">
+                  Current applications and approved teams in this tournament.
+                </p>
               </div>
               <strong>
-                {tournament.participants.length}/{tournament.max_teams}
+                {participantTeams.length}/{tournament.max_teams} approved
               </strong>
             </div>
 
             {removeError ? (
               <Alert variant="error" title="Participant removal failed">
                 {removeError}
+              </Alert>
+            ) : null}
+
+            {reviewError ? (
+              <Alert variant="error" title="Application review failed">
+                {reviewError}
               </Alert>
             ) : null}
 
@@ -664,9 +708,54 @@ export default function TournamentDetailsPage() {
                         <p className="muted">Team ID: {participant.team_id}</p>
                       </div>
 
+                      <StatusBadge value={participant.status} />
+                    </div>
+
+                    <div className="row" style={{ marginTop: "12px" }}>
+                      {isOwner && participant.status === "PENDING" ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void handleReviewParticipant(
+                                participant.team_id,
+                                "APPROVED",
+                              )
+                            }
+                            disabled={busyReviewTeamId === participant.team_id}
+                          >
+                            {busyReviewTeamId === participant.team_id
+                              ? "Saving..."
+                              : "Approve"}
+                          </button>
+
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() =>
+                              void handleReviewParticipant(
+                                participant.team_id,
+                                "REJECTED",
+                              )
+                            }
+                            disabled={busyReviewTeamId === participant.team_id}
+                          >
+                            Reject
+                          </button>
+                        </>
+                      ) : null}
+
+                      <Link
+                        href={`/teams/${participant.team.id}`}
+                        className="btn btn-secondary"
+                      >
+                        Open team
+                      </Link>
+
                       {isOwner ? (
                         <button
                           type="button"
+                          className="btn btn-secondary"
                           onClick={() => void handleRemoveTeam(participant.team_id)}
                           disabled={isRemovingTeamId === participant.team_id}
                         >
@@ -675,15 +764,6 @@ export default function TournamentDetailsPage() {
                             : "Remove"}
                         </button>
                       ) : null}
-                    </div>
-
-                    <div className="row" style={{ marginTop: "12px" }}>
-                      <Link
-                        href={`/teams/${participant.team.id}`}
-                        className="btn btn-secondary"
-                      >
-                        Open team
-                      </Link>
                     </div>
                   </div>
                 ))}

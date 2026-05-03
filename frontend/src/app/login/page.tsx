@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { apiRequest } from "@/src/shared/api/client";
@@ -12,7 +12,7 @@ import {
   type TokenPair,
 } from "@/src/shared/lib/auth";
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -98,11 +98,31 @@ export default function LoginPage() {
 
         <div className="auth-footer">
           Don&apos;t have an account?{" "}
-          <Link href={`/register${nextPath !== "/" ? `?next=${encodeURIComponent(nextPath)}` : ""}`}>
+          <Link
+            href={`/register${
+              nextPath !== "/" ? `?next=${encodeURIComponent(nextPath)}` : ""
+            }`}
+          >
             Create one
           </Link>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="auth-layout">
+          <div className="auth-card">
+            <h1 className="auth-title">Login</h1>
+          </div>
+        </div>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   );
 }
