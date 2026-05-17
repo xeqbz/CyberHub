@@ -142,7 +142,7 @@ class TeamService:
         team_id: int,
         acting_user_id: int,
         user_id: int,
-    ) -> None:
+    ) -> int:
         team = self.get_team_or_raise(team_id)
         self._ensure_owner_access(team, acting_user_id)
 
@@ -153,7 +153,9 @@ class TeamService:
         if member.user_id == team.owner_id:
             raise TeamOwnerRemovalError("Team owner cannot be removed")
 
+        member_id = member.id
         self.repository.remove_member(member)
+        return member_id
 
     def update_member_role(
         self,

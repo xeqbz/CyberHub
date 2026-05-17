@@ -217,6 +217,40 @@ NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 
 If needed, override it through an environment variable.
 
+### 3. Add demo data
+
+After migrations are applied and the backend database is running, seed a full demo
+flow from the `backend` directory:
+
+```bash
+DEBUG=false ./.venv/bin/python -m app.scripts.seed_demo
+```
+
+If you run outside the local virtual environment:
+
+```bash
+DEBUG=false python -m app.scripts.seed_demo
+```
+
+The seeder is idempotent, so it can be run more than once. It creates demo users,
+teams, tournament participants, tournament matches, ranked matches, notifications,
+one resolved dispute and action-log records.
+
+Demo password for all demo accounts:
+
+```text
+demo12345
+```
+
+Useful logins:
+
+```text
+admin@cyberhub-demo.com
+organizer@cyberhub-demo.com
+player@cyberhub-demo.com
+rival@cyberhub-demo.com
+```
+
 ---
 
 ## Backend API

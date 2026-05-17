@@ -118,6 +118,8 @@ def update_tournament(
     current_user: User = Depends(get_current_active_user),
 ) -> TournamentRead:
     service = get_tournament_service(db)
+    previous_tournament = service.get_tournament_by_id(tournament_id)
+    previous_status = previous_tournament.status if previous_tournament else None
 
     try:
         tournament = service.update_tournament(
@@ -150,6 +152,19 @@ def update_tournament(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
+
+    if payload.status is not None and payload.status != previous_status:
+        create_notification(
+            db,
+            user_id=tournament.owner_id,
+            title="Tournament status updated",
+            message=(
+                f"Tournament {tournament.name} status changed "
+                f"to {tournament.status}."
+            ),
+            related_entity_type="tournament",
+            related_entity_id=tournament.id,
+        )
 
     record_action(
         db,

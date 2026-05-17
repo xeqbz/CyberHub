@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.auth.dependencies import get_current_active_user
+from app.modules.platform.service import record_action
 from app.modules.teams.model import TeamMemberRole
 from app.modules.teams.repository import TeamRepository
 from app.modules.teams.schemas import (
@@ -215,7 +216,7 @@ def add_team_member(
     service = get_team_service(db)
 
     try:
-        return service.add_member(
+        member = service.add_member(
             team_id=team_id,
             acting_user_id=current_user.id,
             user_id=payload.user_id,
@@ -236,6 +237,16 @@ def add_team_member(
             status_code=status.HTTP_409_CONFLICT,
             detail="User is already a team member",
         ) from exc
+
+    record_action(
+        db,
+        actor_id=current_user.id,
+        action="team_member_added",
+        entity_type="team_member",
+        entity_id=member.id,
+        details={"team_id": team_id, "user_id": payload.user_id, "role": payload.role},
+    )
+    return member
 
 
 @router.patch(
@@ -294,7 +305,7 @@ def remove_team_member(
     service = get_team_service(db)
 
     try:
-        service.remove_member(
+        member_id = service.remove_member(
             team_id=team_id,
             acting_user_id=current_user.id,
             user_id=user_id,
@@ -320,4 +331,12 @@ def remove_team_member(
             detail="Team owner cannot be removed",
         ) from exc
 
+    record_action(
+        db,
+        actor_id=current_user.id,
+        action="team_member_removed",
+        entity_type="team_member",
+        entity_id=member_id,
+        details={"team_id": team_id, "user_id": user_id},
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

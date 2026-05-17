@@ -10,6 +10,7 @@ from app.modules.auth.security import (
     hash_password,
     verify_password,
 )
+from app.modules.platform.service import record_action
 from app.modules.users.repository import UserRepository
 from app.modules.users.schemas import UserCreate, UserLogin
 from app.modules.users.service import (
@@ -53,6 +54,14 @@ def register(
             detail="User with this username already exists",
         ) from exc
 
+    record_action(
+        db,
+        actor_id=user.id,
+        action="user_registered",
+        entity_type="user",
+        entity_id=user.id,
+        details={"username": user.username, "email": user.email},
+    )
     return TokenPair(
         access_token=create_access_token(user.id),
         refresh_token=create_refresh_token(user.id),

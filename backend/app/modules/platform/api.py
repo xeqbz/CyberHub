@@ -165,9 +165,7 @@ def get_statistics_overview(db: Session = Depends(get_db)) -> OverviewStats:
 def list_team_statistics(db: Session = Depends(get_db)) -> list[TeamStats]:
     teams = list(db.scalars(select(Team).order_by(Team.name)).all())
     matches = list(
-        db.scalars(
-            select(Match).where(Match.status == MatchStatus.COMPLETED)
-        ).all()
+        db.scalars(select(Match).where(Match.status == MatchStatus.COMPLETED)).all()
     )
 
     result: list[TeamStats] = []
@@ -590,13 +588,12 @@ def create_match_dispute(
         select(MatchDispute).where(
             MatchDispute.match_id == payload.match_id,
             MatchDispute.opened_by_id == current_user.id,
-            MatchDispute.status == DisputeStatus.OPEN,
         )
     )
     if existing is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="You already have an open dispute for this match",
+            detail="You already created a dispute for this match",
         )
 
     dispute = MatchDispute(
@@ -689,8 +686,7 @@ def bootstrap_first_admin(
     current_user: User = Depends(get_current_active_user),
 ) -> User:
     admin_count = (
-        db.scalar(select(func.count(User.id)).where(User.role == UserRole.ADMIN))
-        or 0
+        db.scalar(select(func.count(User.id)).where(User.role == UserRole.ADMIN)) or 0
     )
     if admin_count > 0:
         raise HTTPException(

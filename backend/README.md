@@ -69,6 +69,32 @@ Run a specific test module:
 
     pytest tests/api/test_auth.py -v
 
+## Demo data
+
+After applying migrations and starting the database, seed demo data from the
+`backend` directory:
+
+    DEBUG=false ./.venv/bin/python -m app.scripts.seed_demo
+
+If you are not using the local virtual environment:
+
+    DEBUG=false python -m app.scripts.seed_demo
+
+The command is idempotent and creates a complete UI walkthrough: demo users,
+teams, tournament participants, matches, ranked matches, notifications, a resolved
+dispute and action-log records.
+
+Demo password for all demo accounts:
+
+    demo12345
+
+Useful logins:
+
+    admin@cyberhub-demo.com
+    organizer@cyberhub-demo.com
+    player@cyberhub-demo.com
+    rival@cyberhub-demo.com
+
 ## Formatting and linting
 
 Run from the `backend` directory:
