@@ -185,12 +185,24 @@ def submit_ranked_result(
     match_id: int,
     player_one_score: int = 2,
     player_two_score: int = 1,
+    player_one_kills: int = 0,
+    player_one_deaths: int = 0,
+    player_one_assists: int = 0,
+    player_two_kills: int = 0,
+    player_two_deaths: int = 0,
+    player_two_assists: int = 0,
 ) -> dict:
     response = client.patch(
         f"/api/v1/ranked/matches/{match_id}/result",
         json={
             "player_one_score": player_one_score,
             "player_two_score": player_two_score,
+            "player_one_kills": player_one_kills,
+            "player_one_deaths": player_one_deaths,
+            "player_one_assists": player_one_assists,
+            "player_two_kills": player_two_kills,
+            "player_two_deaths": player_two_deaths,
+            "player_two_assists": player_two_assists,
         },
         headers=auth_headers(access_token),
     )

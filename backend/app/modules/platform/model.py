@@ -121,6 +121,12 @@ class RankedMatch(BaseModel):
     )
     player_one_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     player_two_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    player_one_kills: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    player_one_deaths: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    player_one_assists: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    player_two_kills: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    player_two_deaths: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    player_two_assists: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     winner_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
@@ -134,6 +140,26 @@ class RankedMatch(BaseModel):
     player_one: Mapped[User] = relationship("User", foreign_keys=[player_one_id])
     player_two: Mapped[User] = relationship("User", foreign_keys=[player_two_id])
     winner: Mapped[User | None] = relationship("User", foreign_keys=[winner_id])
+
+    @staticmethod
+    def calculate_kda(kills: int, deaths: int, assists: int) -> float:
+        return round((kills + assists) / max(deaths, 1), 2)
+
+    @property
+    def player_one_kda(self) -> float:
+        return self.calculate_kda(
+            self.player_one_kills or 0,
+            self.player_one_deaths or 0,
+            self.player_one_assists or 0,
+        )
+
+    @property
+    def player_two_kda(self) -> float:
+        return self.calculate_kda(
+            self.player_two_kills or 0,
+            self.player_two_deaths or 0,
+            self.player_two_assists or 0,
+        )
 
 
 class MatchmakingRequest(BaseModel):

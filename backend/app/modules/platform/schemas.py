@@ -87,6 +87,14 @@ class RankedMatchRead(BaseModel):
     status: RankedMatchStatus
     player_one_score: int | None
     player_two_score: int | None
+    player_one_kills: int
+    player_one_deaths: int
+    player_one_assists: int
+    player_one_kda: float
+    player_two_kills: int
+    player_two_deaths: int
+    player_two_assists: int
+    player_two_kda: float
     winner_id: int | None
     completed_at: datetime | None
     created_at: datetime
@@ -118,6 +126,12 @@ class MatchmakingResponse(BaseModel):
 class RankedMatchScoreUpdate(BaseModel):
     player_one_score: int = Field(..., ge=0)
     player_two_score: int = Field(..., ge=0)
+    player_one_kills: int = Field(default=0, ge=0)
+    player_one_deaths: int = Field(default=0, ge=0)
+    player_one_assists: int = Field(default=0, ge=0)
+    player_two_kills: int = Field(default=0, ge=0)
+    player_two_deaths: int = Field(default=0, ge=0)
+    player_two_assists: int = Field(default=0, ge=0)
 
 
 class OverviewStats(BaseModel):
@@ -137,6 +151,20 @@ class TeamStats(BaseModel):
     wins: int
     losses: int
     draws: int
+
+
+class PlayerStats(BaseModel):
+    user_id: int
+    username: str
+    rating: int
+    ranked_matches: int
+    wins: int
+    losses: int
+    draws: int
+    kills: int
+    deaths: int
+    assists: int
+    kda: float
 
 
 class TournamentStats(BaseModel):

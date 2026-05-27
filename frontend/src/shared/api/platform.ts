@@ -31,6 +31,20 @@ export type TeamStats = {
   draws: number;
 };
 
+export type PlayerStats = {
+  user_id: number;
+  username: string;
+  rating: number;
+  ranked_matches: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  kills: number;
+  deaths: number;
+  assists: number;
+  kda: number;
+};
+
 export type TournamentStats = {
   tournament_id: number;
   name: string;
@@ -53,6 +67,25 @@ export type NotificationRead = {
   updated_at: string;
 };
 
+export type NotificationSnapshot = {
+  total_count: number;
+  unread_count: number;
+  latest_notification_id: number | null;
+  notifications: NotificationRead[];
+};
+
+export type PlatformRealtimeEvent =
+  | {
+      type: "notifications.snapshot";
+      payload: NotificationSnapshot;
+      created_at: string;
+    }
+  | {
+      type: "pong";
+      payload: Record<string, never>;
+      created_at: string;
+    };
+
 export type RankedMatch = {
   id: number;
   player_one_id: number;
@@ -60,6 +93,14 @@ export type RankedMatch = {
   status: "SCHEDULED" | "COMPLETED" | "CANCELLED";
   player_one_score: number | null;
   player_two_score: number | null;
+  player_one_kills: number;
+  player_one_deaths: number;
+  player_one_assists: number;
+  player_one_kda: number;
+  player_two_kills: number;
+  player_two_deaths: number;
+  player_two_assists: number;
+  player_two_kda: number;
   winner_id: number | null;
   completed_at: string | null;
   created_at: string;
@@ -134,6 +175,10 @@ export async function listTeamStats(): Promise<TeamStats[]> {
   return apiRequest<TeamStats[]>("/statistics/teams");
 }
 
+export async function listPlayerStats(): Promise<PlayerStats[]> {
+  return apiRequest<PlayerStats[]>("/statistics/players");
+}
+
 export async function listTournamentStats(): Promise<TournamentStats[]> {
   return apiRequest<TournamentStats[]>("/statistics/tournaments");
 }
@@ -179,7 +224,16 @@ export async function listRankedMatches(token: string): Promise<RankedMatch[]> {
 
 export async function submitRankedMatchResult(
   matchId: number,
-  payload: { player_one_score: number; player_two_score: number },
+  payload: {
+    player_one_score: number;
+    player_two_score: number;
+    player_one_kills?: number;
+    player_one_deaths?: number;
+    player_one_assists?: number;
+    player_two_kills?: number;
+    player_two_deaths?: number;
+    player_two_assists?: number;
+  },
   token: string,
 ): Promise<RankedMatch> {
   return apiRequest<RankedMatch>(`/ranked/matches/${matchId}/result`, {

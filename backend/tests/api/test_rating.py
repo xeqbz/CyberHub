@@ -40,6 +40,32 @@ def test_ranked_result_recalculates_player_ratings(client):
     assert second_profile["losses"] == 1
 
 
+def test_ranked_result_stores_kda_statistics(client):
+    first = register_user(client, "alpha", "alpha@example.com")
+    second = register_user(client, "bravo", "bravo@example.com")
+    match = create_ranked_match(client, first, second)
+
+    result = submit_ranked_result(
+        client,
+        first["access_token"],
+        match["id"],
+        player_one_score=2,
+        player_two_score=1,
+        player_one_kills=24,
+        player_one_deaths=8,
+        player_one_assists=6,
+        player_two_kills=18,
+        player_two_deaths=15,
+        player_two_assists=4,
+    )
+
+    assert result["player_one_kills"] == 24
+    assert result["player_one_deaths"] == 8
+    assert result["player_one_assists"] == 6
+    assert result["player_one_kda"] == 3.75
+    assert result["player_two_kda"] == 1.47
+
+
 def test_ranked_rating_changes_after_sequential_matches(client):
     first = register_user(client, "alpha", "alpha@example.com")
     second = register_user(client, "bravo", "bravo@example.com")

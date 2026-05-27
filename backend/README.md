@@ -80,9 +80,19 @@ If you are not using the local virtual environment:
 
     DEBUG=false python -m app.scripts.seed_demo
 
-The command is idempotent and creates a complete UI walkthrough: demo users,
-teams, tournament participants, matches, ranked matches, notifications, a resolved
-dispute and action-log records.
+By default, the command removes previous records whose users use
+`@cyberhub-demo.com` or whose names start with `Demo `, then recreates a larger
+demo dataset:
+
+- 64 demo users
+- 12 full five-player teams
+- 6 tournaments in different statuses
+- 19 tournament matches
+- 25 ranked matches
+- matchmaking requests, notifications, disputes and action logs
+
+Pass `--keep-existing` to update demo records without purging the previous
+demo dataset first.
 
 Demo password for all demo accounts:
 
@@ -91,9 +101,12 @@ Demo password for all demo accounts:
 Useful logins:
 
     admin@cyberhub-demo.com
+    moderator@cyberhub-demo.com
     organizer@cyberhub-demo.com
+    league.ops@cyberhub-demo.com
     player@cyberhub-demo.com
     rival@cyberhub-demo.com
+    player01@cyberhub-demo.com
 
 ## Formatting and linting
 

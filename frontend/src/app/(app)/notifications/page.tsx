@@ -9,7 +9,9 @@ import {
   listNotifications,
   markNotificationRead,
   type NotificationRead,
+  type PlatformRealtimeEvent,
 } from "@/src/shared/api/platform";
+import { getWebSocketUrl } from "@/src/shared/config/api";
 import { getAccessToken } from "@/src/shared/lib/auth";
 
 function formatDate(value: string): string {
@@ -22,6 +24,9 @@ export default function NotificationsPage() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [liveStatus, setLiveStatus] = useState<"connecting" | "live" | "offline">(
+    "connecting",
+  );
 
   const loadNotifications = useCallback(async () => {
     const token = getAccessToken();
@@ -45,6 +50,49 @@ export default function NotificationsPage() {
   useEffect(() => {
     void loadNotifications();
   }, [loadNotifications]);
+
+  useEffect(() => {
+    const token = getAccessToken();
+    if (!token) {
+      setLiveStatus("offline");
+      return;
+    }
+
+    let isClosed = false;
+    const socket = new WebSocket(getWebSocketUrl("/ws/notifications", token));
+
+    socket.onopen = () => {
+      setLiveStatus("live");
+      socket.send("ping");
+    };
+
+    socket.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data) as PlatformRealtimeEvent;
+        if (message.type === "notifications.snapshot") {
+          setNotifications(message.payload.notifications);
+          setIsLoading(false);
+        }
+      } catch {
+        // Ignore malformed realtime messages and keep the current HTTP snapshot.
+      }
+    };
+
+    socket.onerror = () => {
+      setLiveStatus("offline");
+    };
+
+    socket.onclose = () => {
+      if (!isClosed) {
+        setLiveStatus("offline");
+      }
+    };
+
+    return () => {
+      isClosed = true;
+      socket.close();
+    };
+  }, []);
 
   const unreadCount = useMemo(
     () => notifications.filter((item) => !item.is_read).length,
@@ -80,6 +128,13 @@ export default function NotificationsPage() {
           <button type="button" onClick={() => void loadNotifications()}>
             Refresh
           </button>
+          <span className="badge">
+            {liveStatus === "live"
+              ? "Live"
+              : liveStatus === "connecting"
+                ? "Connecting"
+                : "Offline"}
+          </span>
         </div>
       </section>
 

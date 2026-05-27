@@ -253,9 +253,19 @@ If you run outside the local virtual environment:
 DEBUG=false python -m app.scripts.seed_demo
 ```
 
-The seeder is idempotent, so it can be run more than once. It creates demo users,
-teams, tournament participants, tournament matches, ranked matches, notifications,
-one resolved dispute and action-log records.
+By default, the seeder removes previous records whose users use
+`@cyberhub-demo.com` or whose names start with `Demo `, then recreates a larger
+demo dataset:
+
+- 64 demo users
+- 12 full five-player teams
+- 6 tournaments in different statuses
+- 19 tournament matches
+- 25 ranked matches
+- matchmaking requests, notifications, disputes and action logs
+
+If you want to update records without purging the previous demo dataset, pass
+`--keep-existing`.
 
 Demo password for all demo accounts:
 
@@ -267,9 +277,12 @@ Useful logins:
 
 ```text
 admin@cyberhub-demo.com
+moderator@cyberhub-demo.com
 organizer@cyberhub-demo.com
+league.ops@cyberhub-demo.com
 player@cyberhub-demo.com
 rival@cyberhub-demo.com
+player01@cyberhub-demo.com
 ```
 
 ---

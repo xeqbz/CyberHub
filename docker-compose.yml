@@ -52,6 +52,44 @@ services:
     profiles:
       - app
 
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cyberhub-celery-worker
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.celery_app.celery_app worker --loglevel=INFO
+    profiles:
+      - app
+
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cyberhub-celery-beat
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.celery_app.celery_app beat --loglevel=INFO
+    profiles:
+      - app
+
 volumes:
   postgres_data:
   redis_data:

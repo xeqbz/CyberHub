@@ -27,6 +27,37 @@ def test_player_statistics_update_after_ranked_match(client):
     assert data["rating"] > 1000
 
 
+def test_player_statistics_include_kda_from_ranked_matches(client):
+    first = register_user(client, "alpha", "alpha@example.com")
+    second = register_user(client, "bravo", "bravo@example.com")
+    match = create_ranked_match(client, first, second)
+
+    submit_ranked_result(
+        client,
+        first["access_token"],
+        match["id"],
+        player_one_score=2,
+        player_two_score=0,
+        player_one_kills=20,
+        player_one_deaths=5,
+        player_one_assists=10,
+        player_two_kills=7,
+        player_two_deaths=18,
+        player_two_assists=3,
+    )
+
+    response = client.get("/api/v1/statistics/players")
+
+    assert response.status_code == 200
+    players = {item["username"]: item for item in response.json()}
+    assert players["alpha"]["ranked_matches"] == 1
+    assert players["alpha"]["kills"] == 20
+    assert players["alpha"]["deaths"] == 5
+    assert players["alpha"]["assists"] == 10
+    assert players["alpha"]["kda"] == 6.0
+    assert players["bravo"]["kda"] == 0.56
+
+
 def test_team_statistics_aggregate_completed_matches(client):
     context = prepare_match_context(client)
     complete_match(

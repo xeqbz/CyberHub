@@ -7,15 +7,18 @@ import Alert from "@/src/components/ui/alert";
 import EmptyState from "@/src/components/ui/empty-state";
 import {
   getOverviewStats,
+  listPlayerStats,
   listTeamStats,
   listTournamentStats,
   type OverviewStats,
+  type PlayerStats,
   type TeamStats,
   type TournamentStats,
 } from "@/src/shared/api/platform";
 
 export default function StatisticsPage() {
   const [overview, setOverview] = useState<OverviewStats | null>(null);
+  const [players, setPlayers] = useState<PlayerStats[]>([]);
   const [teams, setTeams] = useState<TeamStats[]>([]);
   const [tournaments, setTournaments] = useState<TournamentStats[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -25,12 +28,14 @@ export default function StatisticsPage() {
     try {
       setError("");
       setIsLoading(true);
-      const [overviewData, teamData, tournamentData] = await Promise.all([
+      const [overviewData, playerData, teamData, tournamentData] = await Promise.all([
         getOverviewStats(),
+        listPlayerStats(),
         listTeamStats(),
         listTournamentStats(),
       ]);
       setOverview(overviewData);
+      setPlayers(playerData);
       setTeams(teamData);
       setTournaments(tournamentData);
     } catch (err) {
@@ -94,6 +99,42 @@ export default function StatisticsPage() {
             className="grid grid-2"
             style={{ alignItems: "start", marginBottom: "24px" }}
           >
+            <div className="card">
+              <h2>Player KDA</h2>
+              {players.length === 0 ? (
+                <EmptyState
+                  title="No player data"
+                  description="Player KDA will appear after completed ranked matches."
+                />
+              ) : (
+                <div className="grid" style={{ marginTop: "18px" }}>
+                  {players.slice(0, 6).map((player) => (
+                    <div key={player.user_id} className="card">
+                      <h3>{player.username}</h3>
+                      <p className="muted">
+                        Rating {player.rating} · {player.ranked_matches} ranked
+                        matches
+                      </p>
+                      <div className="grid grid-3" style={{ marginTop: "14px" }}>
+                        <div>
+                          <p className="muted">KDA</p>
+                          <strong>{player.kda.toFixed(2)}</strong>
+                        </div>
+                        <div>
+                          <p className="muted">Kills</p>
+                          <strong>{player.kills}</strong>
+                        </div>
+                        <div>
+                          <p className="muted">Assists</p>
+                          <strong>{player.assists}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="card">
               <h2>Team performance</h2>
               {teams.length === 0 ? (

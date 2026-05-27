@@ -28,6 +28,7 @@ from app.modules.platform.schemas import (
     MatchmakingResponse,
     NotificationRead,
     OverviewStats,
+    PlayerStats,
     RankedMatchRead,
     RankedMatchScoreUpdate,
     RankingUser,
@@ -68,6 +69,42 @@ def _get_ranked_match(db: Session, match_id: int) -> RankedMatch | None:
     return db.scalar(stmt)
 
 
+def _stat_value(value: int | None) -> int:
+    return value or 0
+
+
+def _has_player_performance(
+    kills: int | None,
+    deaths: int | None,
+    assists: int | None,
+) -> bool:
+    kills = _stat_value(kills)
+    deaths = _stat_value(deaths)
+    assists = _stat_value(assists)
+    return kills > 0 or deaths > 0 or assists > 0
+
+
+def _performance_modifier(
+    kills: int | None,
+    deaths: int | None,
+    assists: int | None,
+) -> float:
+    kills = _stat_value(kills)
+    deaths = _stat_value(deaths)
+    assists = _stat_value(assists)
+    if not _has_player_performance(kills, deaths, assists):
+        return 1.0
+
+    kda = RankedMatch.calculate_kda(kills, deaths, assists)
+    return min(max(1 + (kda - 1) * 0.05, 0.9), 1.15)
+
+
+def _apply_performance_modifier(delta: float, modifier: float) -> float:
+    if delta >= 0:
+        return delta * modifier
+    return delta * (2 - modifier)
+
+
 def _apply_elo(match: RankedMatch) -> None:
     player_one = match.player_one
     player_two = match.player_two
@@ -94,8 +131,30 @@ def _apply_elo(match: RankedMatch) -> None:
         player_two.draws += 1
 
     k_factor = 32
-    player_one.rating = round(rating_one + k_factor * (score_one - expected_one))
-    player_two.rating = round(rating_two + k_factor * (score_two - expected_two))
+    base_delta_one = k_factor * (score_one - expected_one)
+    base_delta_two = k_factor * (score_two - expected_two)
+
+    # Diploma demo: score-only submissions keep classic ELO behavior, while
+    # submitted KDA gently adjusts the rating delta by personal performance.
+    delta_one = _apply_performance_modifier(
+        base_delta_one,
+        _performance_modifier(
+            match.player_one_kills,
+            match.player_one_deaths,
+            match.player_one_assists,
+        ),
+    )
+    delta_two = _apply_performance_modifier(
+        base_delta_two,
+        _performance_modifier(
+            match.player_two_kills,
+            match.player_two_deaths,
+            match.player_two_assists,
+        ),
+    )
+
+    player_one.rating = round(rating_one + delta_one)
+    player_two.rating = round(rating_two + delta_two)
 
 
 @router.get(
@@ -195,6 +254,57 @@ def list_team_statistics(db: Session = Depends(get_db)) -> list[TeamStats]:
                 wins=wins,
                 losses=losses,
                 draws=draws,
+            )
+        )
+
+    return result
+
+
+@router.get(
+    "/statistics/players",
+    response_model=list[PlayerStats],
+    status_code=status.HTTP_200_OK,
+)
+def list_player_statistics(db: Session = Depends(get_db)) -> list[PlayerStats]:
+    users = list(db.scalars(select(User).order_by(User.rating.desc(), User.id)).all())
+    ranked_matches = list(
+        db.scalars(
+            select(RankedMatch).where(RankedMatch.status == RankedMatchStatus.COMPLETED)
+        ).all()
+    )
+    result: list[PlayerStats] = []
+
+    for user in users:
+        kills = 0
+        deaths = 0
+        assists = 0
+        ranked_matches_count = 0
+
+        for match in ranked_matches:
+            if match.player_one_id == user.id:
+                ranked_matches_count += 1
+                kills += match.player_one_kills
+                deaths += match.player_one_deaths
+                assists += match.player_one_assists
+            elif match.player_two_id == user.id:
+                ranked_matches_count += 1
+                kills += match.player_two_kills
+                deaths += match.player_two_deaths
+                assists += match.player_two_assists
+
+        result.append(
+            PlayerStats(
+                user_id=user.id,
+                username=user.username,
+                rating=user.rating,
+                ranked_matches=ranked_matches_count,
+                wins=user.wins,
+                losses=user.losses,
+                draws=user.draws,
+                kills=kills,
+                deaths=deaths,
+                assists=assists,
+                kda=RankedMatch.calculate_kda(kills, deaths, assists),
             )
         )
 
@@ -519,6 +629,12 @@ def submit_ranked_match_result(
 
     match.player_one_score = payload.player_one_score
     match.player_two_score = payload.player_two_score
+    match.player_one_kills = payload.player_one_kills
+    match.player_one_deaths = payload.player_one_deaths
+    match.player_one_assists = payload.player_one_assists
+    match.player_two_kills = payload.player_two_kills
+    match.player_two_deaths = payload.player_two_deaths
+    match.player_two_assists = payload.player_two_assists
     if payload.player_one_score > payload.player_two_score:
         match.winner_id = match.player_one_id
     elif payload.player_two_score > payload.player_one_score:
@@ -554,6 +670,8 @@ def submit_ranked_match_result(
         details={
             "player_one_score": payload.player_one_score,
             "player_two_score": payload.player_two_score,
+            "player_one_kda": match.player_one_kda,
+            "player_two_kda": match.player_two_kda,
             "winner_id": match.winner_id,
         },
     )

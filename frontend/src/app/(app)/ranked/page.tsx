@@ -21,9 +21,33 @@ function formatDate(value: string | null): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
+type RankedMatchFormState = {
+  one: string;
+  two: string;
+  oneKills: string;
+  oneDeaths: string;
+  oneAssists: string;
+  twoKills: string;
+  twoDeaths: string;
+  twoAssists: string;
+};
+
+function getDefaultFormState(): RankedMatchFormState {
+  return {
+    one: "0",
+    two: "0",
+    oneKills: "0",
+    oneDeaths: "0",
+    oneAssists: "0",
+    twoKills: "0",
+    twoDeaths: "0",
+    twoAssists: "0",
+  };
+}
+
 export default function RankedPage() {
   const [matches, setMatches] = useState<RankedMatch[]>([]);
-  const [scores, setScores] = useState<Record<number, { one: string; two: string }>>({});
+  const [scores, setScores] = useState<Record<number, RankedMatchFormState>>({});
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -87,12 +111,20 @@ export default function RankedPage() {
       return;
     }
 
-    const score = scores[match.id] ?? { one: "0", two: "0" };
-    const playerOneScore = Number(score.one);
-    const playerTwoScore = Number(score.two);
+    const score = scores[match.id] ?? getDefaultFormState();
+    const numericValues = {
+      playerOneScore: Number(score.one),
+      playerTwoScore: Number(score.two),
+      playerOneKills: Number(score.oneKills),
+      playerOneDeaths: Number(score.oneDeaths),
+      playerOneAssists: Number(score.oneAssists),
+      playerTwoKills: Number(score.twoKills),
+      playerTwoDeaths: Number(score.twoDeaths),
+      playerTwoAssists: Number(score.twoAssists),
+    };
 
-    if (!Number.isFinite(playerOneScore) || !Number.isFinite(playerTwoScore)) {
-      setError("Scores must be numeric.");
+    if (Object.values(numericValues).some((value) => !Number.isFinite(value))) {
+      setError("Scores and player statistics must be numeric.");
       return;
     }
 
@@ -101,8 +133,14 @@ export default function RankedPage() {
       await submitRankedMatchResult(
         match.id,
         {
-          player_one_score: playerOneScore,
-          player_two_score: playerTwoScore,
+          player_one_score: numericValues.playerOneScore,
+          player_two_score: numericValues.playerTwoScore,
+          player_one_kills: numericValues.playerOneKills,
+          player_one_deaths: numericValues.playerOneDeaths,
+          player_one_assists: numericValues.playerOneAssists,
+          player_two_kills: numericValues.playerTwoKills,
+          player_two_deaths: numericValues.playerTwoDeaths,
+          player_two_assists: numericValues.playerTwoAssists,
         },
         token,
       );
@@ -163,7 +201,7 @@ export default function RankedPage() {
           <h2>My ranked matches</h2>
           <div className="grid" style={{ marginTop: "18px" }}>
             {matches.map((match) => {
-              const score = scores[match.id] ?? { one: "0", two: "0" };
+              const score = scores[match.id] ?? getDefaultFormState();
 
               return (
                 <div key={match.id} className="card">
@@ -197,42 +235,168 @@ export default function RankedPage() {
                     </div>
                   </div>
 
-                  {match.status === "SCHEDULED" ? (
+                  {match.status === "COMPLETED" ? (
                     <div className="grid grid-2" style={{ marginTop: "16px" }}>
-                      <div className="form-group">
-                        <label htmlFor={`player-one-score-${match.id}`}>
-                          {match.player_one.username}
-                        </label>
-                        <input
-                          id={`player-one-score-${match.id}`}
-                          type="number"
-                          min={0}
-                          value={score.one}
-                          onChange={(event) =>
-                            setScores((prev) => ({
-                              ...prev,
-                              [match.id]: { ...score, one: event.target.value },
-                            }))
-                          }
-                        />
+                      <div className="card">
+                        <h3>{match.player_one.username}</h3>
+                        <p className="muted">
+                          K/D/A: {match.player_one_kills}/
+                          {match.player_one_deaths}/{match.player_one_assists}
+                        </p>
+                        <strong>KDA {match.player_one_kda.toFixed(2)}</strong>
+                      </div>
+
+                      <div className="card">
+                        <h3>{match.player_two.username}</h3>
+                        <p className="muted">
+                          K/D/A: {match.player_two_kills}/
+                          {match.player_two_deaths}/{match.player_two_assists}
+                        </p>
+                        <strong>KDA {match.player_two_kda.toFixed(2)}</strong>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {match.status === "SCHEDULED" ? (
+                    <div className="grid" style={{ marginTop: "16px" }}>
+                      <div className="grid grid-2">
+                        <div className="form-group">
+                          <label htmlFor={`player-one-score-${match.id}`}>
+                            {match.player_one.username} score
+                          </label>
+                          <input
+                            id={`player-one-score-${match.id}`}
+                            type="number"
+                            min={0}
+                            value={score.one}
+                            onChange={(event) =>
+                              setScores((prev) => ({
+                                ...prev,
+                                [match.id]: { ...score, one: event.target.value },
+                              }))
+                            }
+                          />
+                        </div>
+
+                        <div className="form-group">
+                          <label htmlFor={`player-two-score-${match.id}`}>
+                            {match.player_two.username} score
+                          </label>
+                          <input
+                            id={`player-two-score-${match.id}`}
+                            type="number"
+                            min={0}
+                            value={score.two}
+                            onChange={(event) =>
+                              setScores((prev) => ({
+                                ...prev,
+                                [match.id]: { ...score, two: event.target.value },
+                              }))
+                            }
+                          />
+                        </div>
                       </div>
 
                       <div className="form-group">
-                        <label htmlFor={`player-two-score-${match.id}`}>
-                          {match.player_two.username}
-                        </label>
-                        <input
-                          id={`player-two-score-${match.id}`}
-                          type="number"
-                          min={0}
-                          value={score.two}
-                          onChange={(event) =>
-                            setScores((prev) => ({
-                              ...prev,
-                              [match.id]: { ...score, two: event.target.value },
-                            }))
-                          }
-                        />
+                        <label>{match.player_one.username} K/D/A</label>
+                        <div className="grid grid-3">
+                          <input
+                            aria-label={`${match.player_one.username} kills`}
+                            type="number"
+                            min={0}
+                            value={score.oneKills}
+                            onChange={(event) =>
+                              setScores((prev) => ({
+                                ...prev,
+                                [match.id]: {
+                                  ...score,
+                                  oneKills: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                          <input
+                            aria-label={`${match.player_one.username} deaths`}
+                            type="number"
+                            min={0}
+                            value={score.oneDeaths}
+                            onChange={(event) =>
+                              setScores((prev) => ({
+                                ...prev,
+                                [match.id]: {
+                                  ...score,
+                                  oneDeaths: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                          <input
+                            aria-label={`${match.player_one.username} assists`}
+                            type="number"
+                            min={0}
+                            value={score.oneAssists}
+                            onChange={(event) =>
+                              setScores((prev) => ({
+                                ...prev,
+                                [match.id]: {
+                                  ...score,
+                                  oneAssists: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        </div>
+                      </div>
+
+                      <div className="form-group">
+                        <label>{match.player_two.username} K/D/A</label>
+                        <div className="grid grid-3">
+                          <input
+                            aria-label={`${match.player_two.username} kills`}
+                            type="number"
+                            min={0}
+                            value={score.twoKills}
+                            onChange={(event) =>
+                              setScores((prev) => ({
+                                ...prev,
+                                [match.id]: {
+                                  ...score,
+                                  twoKills: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                          <input
+                            aria-label={`${match.player_two.username} deaths`}
+                            type="number"
+                            min={0}
+                            value={score.twoDeaths}
+                            onChange={(event) =>
+                              setScores((prev) => ({
+                                ...prev,
+                                [match.id]: {
+                                  ...score,
+                                  twoDeaths: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                          <input
+                            aria-label={`${match.player_two.username} assists`}
+                            type="number"
+                            min={0}
+                            value={score.twoAssists}
+                            onChange={(event) =>
+                              setScores((prev) => ({
+                                ...prev,
+                                [match.id]: {
+                                  ...score,
+                                  twoAssists: event.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        </div>
                       </div>
 
                       <div className="row">
