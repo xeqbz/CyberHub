@@ -335,6 +335,178 @@ def test_update_match_score_completes_match(client):
     assert data["winner_team"]["name"] == "Cyber Wolves"
 
 
+def test_submit_and_confirm_match_result(client):
+    owner, second_owner, tournament, home_team, away_team = prepare_match_context(client)
+    match = create_match(
+        client,
+        owner["access_token"],
+        tournament["id"],
+        home_team["id"],
+        away_team["id"],
+    )
+
+    submit_response = client.patch(
+        f"/api/v1/matches/{match['id']}/result/submit",
+        json={
+            "home_score": 2,
+            "away_score": 1,
+            "winner_team_id": home_team["id"],
+        },
+        headers=auth_headers(owner["access_token"]),
+    )
+
+    assert submit_response.status_code == 200
+    pending = submit_response.json()
+    assert pending["status"] == "PENDING_CONFIRMATION"
+    assert pending["home_score"] is None
+    assert pending["proposed_home_score"] == 2
+    assert pending["proposed_winner_team_id"] == home_team["id"]
+
+    confirm_response = client.post(
+        f"/api/v1/matches/{match['id']}/result/confirm",
+        headers=auth_headers(second_owner["access_token"]),
+    )
+
+    assert confirm_response.status_code == 200
+    confirmed = confirm_response.json()
+    assert confirmed["status"] == "COMPLETED"
+    assert confirmed["home_score"] == 2
+    assert confirmed["away_score"] == 1
+    assert confirmed["winner_team_id"] == home_team["id"]
+
+
+def test_result_submitter_cannot_confirm_own_submission(client):
+    owner, second_owner, tournament, home_team, away_team = prepare_match_context(client)
+    match = create_match(
+        client,
+        owner["access_token"],
+        tournament["id"],
+        home_team["id"],
+        away_team["id"],
+    )
+    submit_response = client.patch(
+        f"/api/v1/matches/{match['id']}/result/submit",
+        json={
+            "home_score": 1,
+            "away_score": 2,
+            "winner_team_id": away_team["id"],
+        },
+        headers=auth_headers(second_owner["access_token"]),
+    )
+    assert submit_response.status_code == 200
+
+    confirm_response = client.post(
+        f"/api/v1/matches/{match['id']}/result/confirm",
+        headers=auth_headers(second_owner["access_token"]),
+    )
+
+    assert confirm_response.status_code == 403
+    assert (
+        confirm_response.json()["detail"]
+        == "Result submitter cannot confirm or dispute their own submission"
+    )
+
+
+def test_disputed_result_can_be_rejected_by_admin(client):
+    owner, second_owner, tournament, home_team, away_team = prepare_match_context(client)
+    admin = register_user(client, "admin_match", "admin-match@example.com")
+    match = create_match(
+        client,
+        owner["access_token"],
+        tournament["id"],
+        home_team["id"],
+        away_team["id"],
+    )
+    client.patch(
+        f"/api/v1/matches/{match['id']}/result/submit",
+        json={
+            "home_score": 2,
+            "away_score": 1,
+            "winner_team_id": home_team["id"],
+        },
+        headers=auth_headers(owner["access_token"]),
+    )
+    dispute_response = client.post(
+        f"/api/v1/matches/{match['id']}/result/dispute",
+        headers=auth_headers(second_owner["access_token"]),
+    )
+    assert dispute_response.status_code == 200
+    assert dispute_response.json()["status"] == "DISPUTED"
+
+    bootstrap_response = client.post(
+        "/api/v1/admin/bootstrap",
+        headers=auth_headers(admin["access_token"]),
+    )
+    assert bootstrap_response.status_code == 200
+    disputes_response = client.get(
+        "/api/v1/admin/disputes",
+        headers=auth_headers(admin["access_token"]),
+    )
+    dispute_id = disputes_response.json()[0]["id"]
+    resolve_response = client.patch(
+        f"/api/v1/admin/disputes/{dispute_id}/resolve",
+        json={
+            "status": "RESOLVED",
+            "resolution": "The submitted result was not accepted.",
+        },
+        headers=auth_headers(admin["access_token"]),
+    )
+
+    assert resolve_response.status_code == 200
+    refreshed = client.get(f"/api/v1/matches/{match['id']}").json()
+    assert refreshed["status"] == "SCHEDULED"
+    assert refreshed["proposed_home_score"] is None
+    assert refreshed["home_score"] is None
+
+
+def test_pending_result_advances_bracket_only_after_confirmation(client):
+    owner = register_user(client, "owner_pending", "owner-pending@example.com")
+    tournament = create_tournament(
+        client,
+        owner["access_token"],
+        name="Pending Result Cup",
+        status="REGISTRATION_OPEN",
+        tournament_format="single_elimination",
+    )
+    create_registered_teams(
+        client,
+        owner["access_token"],
+        tournament["id"],
+        count=4,
+    )
+    close_registration(client, owner["access_token"], tournament["id"])
+    opening_matches = generate_bracket(client, owner["access_token"], tournament["id"])
+
+    submit_response = client.patch(
+        f"/api/v1/matches/{opening_matches[0]['id']}/result/submit",
+        json={
+            "home_score": 2,
+            "away_score": 1,
+            "winner_team_id": opening_matches[0]["home_team_id"],
+        },
+        headers=auth_headers(owner["access_token"]),
+    )
+    assert submit_response.status_code == 200
+    assert len(list_tournament_matches(client, tournament["id"])) == 2
+
+    confirm_response = client.post(
+        f"/api/v1/matches/{opening_matches[0]['id']}/result/confirm",
+        headers=auth_headers(owner["access_token"]),
+    )
+
+    assert confirm_response.status_code == 200
+    assert len(list_tournament_matches(client, tournament["id"])) == 2
+
+    second_confirmed = complete_match(
+        client,
+        owner["access_token"],
+        opening_matches[1],
+        opening_matches[1]["home_team_id"],
+    )
+    assert second_confirmed["status"] == "COMPLETED"
+    assert len(list_tournament_matches(client, tournament["id"])) == 3
+
+
 def test_invalid_winner_for_score_returns_409(client):
     owner, _, tournament, home_team, away_team = prepare_match_context(client)
     match = create_match(

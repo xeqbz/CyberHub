@@ -66,6 +66,129 @@ def test_owner_can_add_member(client):
     assert data["user"]["username"] == "alex"
 
 
+def test_owner_can_invite_member_by_username(client):
+    owner = register_user(client, "vadim", "vadim@example.com")
+    invited = register_user(client, "alex", "alex@example.com")
+    team = create_team(client, owner["access_token"])
+
+    response = client.post(
+        f"/api/v1/teams/{team['id']}/invitations",
+        json={
+            "username": "alex",
+            "role": "MEMBER",
+        },
+        headers=auth_headers(owner["access_token"]),
+    )
+
+    assert response.status_code == 201
+    invitation = response.json()
+    assert invitation["status"] == "PENDING"
+    assert invitation["invited_user"]["username"] == "alex"
+
+    members_response = client.get(f"/api/v1/teams/{team['id']}/members")
+    assert len(members_response.json()) == 1
+
+    notifications_response = client.get(
+        "/api/v1/notifications",
+        headers=auth_headers(invited["access_token"]),
+    )
+    assert notifications_response.status_code == 200
+    assert notifications_response.json()[0]["title"] == "Team invitation"
+
+
+def test_invited_user_can_accept_invitation(client):
+    owner = register_user(client, "vadim", "vadim@example.com")
+    invited = register_user(client, "alex", "alex@example.com")
+    team = create_team(client, owner["access_token"])
+    invitation = client.post(
+        f"/api/v1/teams/{team['id']}/invitations",
+        json={
+            "username": "alex",
+            "role": "MEMBER",
+        },
+        headers=auth_headers(owner["access_token"]),
+    ).json()
+
+    response = client.post(
+        f"/api/v1/teams/invitations/{invitation['id']}/accept",
+        headers=auth_headers(invited["access_token"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ACCEPTED"
+
+    members_response = client.get(f"/api/v1/teams/{team['id']}/members")
+    members = members_response.json()
+    assert len(members) == 2
+    assert {item["user"]["username"] for item in members} == {"vadim", "alex"}
+
+
+def test_only_invited_user_can_accept_invitation(client):
+    owner = register_user(client, "vadim", "vadim@example.com")
+    invited = register_user(client, "alex", "alex@example.com")
+    other = register_user(client, "john", "john@example.com")
+    team = create_team(client, owner["access_token"])
+    invitation = client.post(
+        f"/api/v1/teams/{team['id']}/invitations",
+        json={
+            "username": "alex",
+            "role": "MEMBER",
+        },
+        headers=auth_headers(owner["access_token"]),
+    ).json()
+
+    response = client.post(
+        f"/api/v1/teams/invitations/{invitation['id']}/accept",
+        headers=auth_headers(other["access_token"]),
+    )
+
+    assert invited["access_token"]
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Only invited user can perform this action"
+
+
+def test_cannot_spam_team_invitations(client):
+    owner = register_user(client, "vadim", "vadim@example.com")
+    invited = register_user(client, "alex", "alex@example.com")
+    team = create_team(client, owner["access_token"])
+
+    first_response = client.post(
+        f"/api/v1/teams/{team['id']}/invitations",
+        json={
+            "username": "alex",
+            "role": "MEMBER",
+        },
+        headers=auth_headers(owner["access_token"]),
+    )
+    duplicate_response = client.post(
+        f"/api/v1/teams/{team['id']}/invitations",
+        json={
+            "username": "alex",
+            "role": "MEMBER",
+        },
+        headers=auth_headers(owner["access_token"]),
+    )
+    decline_response = client.post(
+        f"/api/v1/teams/invitations/{first_response.json()['id']}/decline",
+        headers=auth_headers(invited["access_token"]),
+    )
+    cooldown_response = client.post(
+        f"/api/v1/teams/{team['id']}/invitations",
+        json={
+            "username": "alex",
+            "role": "MEMBER",
+        },
+        headers=auth_headers(owner["access_token"]),
+    )
+
+    assert first_response.status_code == 201
+    assert duplicate_response.status_code == 409
+    assert duplicate_response.json()["detail"] == "User already has a pending invitation"
+    assert decline_response.status_code == 200
+    assert cooldown_response.status_code == 429
+    assert cooldown_response.json()["detail"] == "Invitation was already sent recently"
+
+
 def test_non_owner_cannot_add_member(client):
     owner = register_user(client, "vadim", "vadim@example.com")
     other_user = register_user(client, "alex", "alex@example.com")

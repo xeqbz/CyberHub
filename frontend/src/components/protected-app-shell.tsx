@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { useCurrentUser } from "@/src/hooks/use-current-user";
@@ -10,6 +10,18 @@ type ProtectedAppShellProps = {
   children: React.ReactNode;
 };
 
+function subscribeToHydrationStore() {
+  return () => {};
+}
+
+function getHydratedSnapshot() {
+  return true;
+}
+
+function getServerHydrationSnapshot() {
+  return false;
+}
+
 export default function ProtectedAppShell({
   children,
 }: ProtectedAppShellProps) {
@@ -17,13 +29,13 @@ export default function ProtectedAppShell({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { isLoading: isLoadingCurrentUser } = useCurrentUser();
-  const [hasHydrated, setHasHydrated] = useState(false);
+  const hasHydrated = useSyncExternalStore(
+    subscribeToHydrationStore,
+    getHydratedSnapshot,
+    getServerHydrationSnapshot,
+  );
 
   const token = hasHydrated ? getAccessToken() : null;
-
-  useEffect(() => {
-    setHasHydrated(true);
-  }, []);
 
   useEffect(() => {
     if (!hasHydrated || token) return;

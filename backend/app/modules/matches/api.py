@@ -16,6 +16,8 @@ from app.modules.matches.service import (
     MatchInvalidScoreError,
     MatchInvalidWinnerError,
     MatchNotFoundError,
+    MatchResultAlreadySubmittedError,
+    MatchResultNotPendingError,
     MatchService,
     MatchTeamNotFoundError,
     MatchTeamNotInTournamentError,
@@ -23,6 +25,7 @@ from app.modules.matches.service import (
     MatchTournamentNotFoundError,
 )
 from app.modules.platform.service import create_notification, record_action
+from app.modules.platform.model import MatchDispute
 from app.modules.teams.repository import TeamRepository
 from app.modules.tournaments.repository import TournamentRepository
 from app.modules.users.model import User
@@ -230,6 +233,8 @@ def update_match_score(
     service = get_match_service(db)
 
     try:
+        # Diploma demo: this endpoint remains the organizer shortcut for legacy
+        # moderation flows; participant confirmation uses /result/* endpoints.
         match = service.update_match_score(
             match_id=match_id,
             acting_user_id=current_user.id,
@@ -278,6 +283,203 @@ def update_match_score(
         details=payload.model_dump(),
     )
     return match
+
+
+@router.patch(
+    "/{match_id}/result/submit",
+    response_model=MatchRead,
+    status_code=status.HTTP_200_OK,
+)
+def submit_match_result(
+    match_id: int,
+    payload: MatchScoreUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> MatchRead:
+    service = get_match_service(db)
+
+    try:
+        match = service.submit_match_result(
+            match_id=match_id,
+            acting_user_id=current_user.id,
+            data=payload,
+        )
+    except MatchNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Match not found",
+        ) from exc
+    except MatchAccessDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except MatchInvalidWinnerError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except MatchResultAlreadySubmittedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    notified_owner_ids: set[int] = set()
+    for team in (match.home_team, match.away_team):
+        if team.owner_id in notified_owner_ids or team.owner_id == current_user.id:
+            continue
+        notified_owner_ids.add(team.owner_id)
+        create_notification(
+            db,
+            user_id=team.owner_id,
+            title="Match result awaits confirmation",
+            message=f"Result for match #{match.id} was submitted for review.",
+            related_entity_type="match",
+            related_entity_id=match.id,
+        )
+
+    record_action(
+        db,
+        actor_id=current_user.id,
+        action="match_result_submitted",
+        entity_type="match",
+        entity_id=match.id,
+        details=payload.model_dump(),
+    )
+    return match
+
+
+@router.post(
+    "/{match_id}/result/confirm",
+    response_model=MatchRead,
+    status_code=status.HTTP_200_OK,
+)
+def confirm_match_result(
+    match_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> MatchRead:
+    service = get_match_service(db)
+
+    try:
+        match = service.confirm_match_result(
+            match_id=match_id,
+            acting_user_id=current_user.id,
+        )
+    except MatchNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Match not found",
+        ) from exc
+    except MatchAccessDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except MatchResultNotPendingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    for team in (match.home_team, match.away_team):
+        create_notification(
+            db,
+            user_id=team.owner_id,
+            title="Match result confirmed",
+            message=f"Result for match #{match.id} was confirmed.",
+            related_entity_type="match",
+            related_entity_id=match.id,
+        )
+
+    record_action(
+        db,
+        actor_id=current_user.id,
+        action="match_result_confirmed",
+        entity_type="match",
+        entity_id=match.id,
+        details={
+            "home_score": match.home_score,
+            "away_score": match.away_score,
+            "winner_team_id": match.winner_team_id,
+        },
+    )
+    return match
+
+
+@router.post(
+    "/{match_id}/result/dispute",
+    response_model=MatchRead,
+    status_code=status.HTTP_200_OK,
+)
+def dispute_match_result(
+    match_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> MatchRead:
+    service = get_match_service(db)
+
+    try:
+        match = service.dispute_match_result(
+            match_id=match_id,
+            acting_user_id=current_user.id,
+        )
+    except MatchNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Match not found",
+        ) from exc
+    except MatchAccessDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except MatchResultNotPendingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    existing_dispute = (
+        db.query(MatchDispute)
+        .filter(
+            MatchDispute.match_id == match.id,
+            MatchDispute.opened_by_id == current_user.id,
+        )
+        .first()
+    )
+    if existing_dispute is None:
+        db.add(
+            MatchDispute(
+                match_id=match.id,
+                opened_by_id=current_user.id,
+                reason="Submitted result was disputed by the opposing team.",
+            )
+        )
+        db.commit()
+
+    create_notification(
+        db,
+        user_id=match.tournament.owner_id,
+        title="Match result disputed",
+        message=f"Match #{match.id} requires moderator review.",
+        related_entity_type="match",
+        related_entity_id=match.id,
+    )
+    record_action(
+        db,
+        actor_id=current_user.id,
+        action="match_result_disputed",
+        entity_type="match",
+        entity_id=match.id,
+        details={
+            "proposed_home_score": match.proposed_home_score,
+            "proposed_away_score": match.proposed_away_score,
+            "proposed_winner_team_id": match.proposed_winner_team_id,
+        },
+    )
+    return service.get_match_or_raise(match.id)
 
 
 @router.delete(

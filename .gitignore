@@ -7,3 +7,5 @@ backend/image.png
 .pytest_cache/
 .ruff_cache
 .codex
+celerybeat-schedule
+backend/celerybeat-schedule

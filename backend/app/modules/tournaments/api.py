@@ -7,7 +7,7 @@ from app.modules.matches.repository import MatchRepository
 from app.modules.matches.schemas import MatchRead
 from app.modules.platform.service import create_notification, record_action
 from app.modules.teams.repository import TeamRepository
-from app.modules.tournaments.model import TournamentParticipantStatus
+from app.modules.tournaments.model import TournamentParticipantStatus, TournamentStatus
 from app.modules.tournaments.repository import TournamentRepository
 from app.modules.tournaments.schemas import (
     TournamentCreate,
@@ -87,12 +87,44 @@ def create_tournament(
     status_code=status.HTTP_200_OK,
 )
 def list_tournaments(
+    search: str | None = Query(default=None, max_length=120),
+    status_filter: TournamentStatus | None = Query(default=None, alias="status"),
+    scope: str | None = Query(
+        default=None,
+        pattern="^(ALL|MY_TOURNAMENTS|OPEN|ACTIVE|COMPLETED)$",
+    ),
+    discipline: str | None = Query(default=None, max_length=120),
+    format: str | None = Query(default=None, max_length=80),
+    owner_id: int | None = Query(default=None, ge=1),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
     db: Session = Depends(get_db),
 ) -> list[TournamentListItem]:
     service = get_tournament_service(db)
-    return service.list_tournaments(offset=offset, limit=limit)
+    statuses: list[TournamentStatus] | None = None
+
+    if status_filter is not None:
+        statuses = [status_filter]
+    elif scope == "OPEN":
+        statuses = [TournamentStatus.REGISTRATION_OPEN]
+    elif scope == "ACTIVE":
+        statuses = [
+            TournamentStatus.REGISTRATION_OPEN,
+            TournamentStatus.REGISTRATION_CLOSED,
+            TournamentStatus.IN_PROGRESS,
+        ]
+    elif scope == "COMPLETED":
+        statuses = [TournamentStatus.COMPLETED]
+
+    return service.list_tournaments(
+        offset=offset,
+        limit=limit,
+        search=search,
+        statuses=statuses,
+        discipline=discipline,
+        format=format,
+        owner_id=owner_id,
+    )
 
 
 @router.get(

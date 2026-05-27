@@ -19,6 +19,11 @@ export type MatchListItem = {
   away_score: number | null;
   winner_team_id: number | null;
   result_confirmed_by_id: number | null;
+  proposed_home_score: number | null;
+  proposed_away_score: number | null;
+  proposed_winner_team_id: number | null;
+  result_submitted_by_id: number | null;
+  result_submitted_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -38,12 +43,18 @@ export type MatchRead = {
   away_score: number | null;
   winner_team_id: number | null;
   result_confirmed_by_id: number | null;
+  proposed_home_score: number | null;
+  proposed_away_score: number | null;
+  proposed_winner_team_id: number | null;
+  result_submitted_by_id: number | null;
+  result_submitted_at: string | null;
   created_at: string;
   updated_at: string;
   tournament: TournamentListItem;
   home_team: TeamListItem;
   away_team: TeamListItem;
   winner_team: TeamListItem | null;
+  proposed_winner_team: TeamListItem | null;
 };
 
 export type CreateMatchPayload = {
@@ -118,6 +129,38 @@ export async function updateMatchScore(
   return apiRequest<MatchRead>(`/matches/${matchId}/score`, {
     method: "PATCH",
     body: payload,
+    token,
+  });
+}
+
+export async function submitMatchResult(
+  matchId: number,
+  payload: UpdateMatchScorePayload,
+  token: string,
+): Promise<MatchRead> {
+  return apiRequest<MatchRead>(`/matches/${matchId}/result/submit`, {
+    method: "PATCH",
+    body: payload,
+    token,
+  });
+}
+
+export async function confirmMatchResult(
+  matchId: number,
+  token: string,
+): Promise<MatchRead> {
+  return apiRequest<MatchRead>(`/matches/${matchId}/result/confirm`, {
+    method: "POST",
+    token,
+  });
+}
+
+export async function disputeMatchResult(
+  matchId: number,
+  token: string,
+): Promise<MatchRead> {
+  return apiRequest<MatchRead>(`/matches/${matchId}/result/dispute`, {
+    method: "POST",
     token,
   });
 }

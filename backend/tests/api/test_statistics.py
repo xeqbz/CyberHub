@@ -121,3 +121,18 @@ def test_rankings_sort_players_by_rating(client):
     assert response.status_code == 200
     rankings = response.json()
     assert [item["username"] for item in rankings] == ["winner", "loser"]
+
+
+def test_rankings_support_min_matches_and_sorting(client):
+    winner = register_user(client, "winner", "winner@example.com")
+    loser = register_user(client, "loser", "loser@example.com")
+    register_user(client, "spectator", "spectator@example.com")
+    match = create_ranked_match(client, winner, loser)
+    submit_ranked_result(client, winner["access_token"], match["id"], 2, 0)
+
+    response = client.get("/api/v1/rankings?min_matches=1&sort_by=wins")
+
+    assert response.status_code == 200
+    usernames = [item["username"] for item in response.json()]
+    assert usernames == ["winner", "loser"]
+    assert "spectator" not in usernames

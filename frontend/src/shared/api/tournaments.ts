@@ -70,8 +70,55 @@ export type CreateTournamentPayload = {
 
 export type UpdateTournamentPayload = Partial<CreateTournamentPayload>;
 
-export async function listTournaments(): Promise<TournamentListItem[]> {
-  return apiRequest<TournamentListItem[]>("/tournaments");
+export type TournamentScope =
+  | "ALL"
+  | "MY_TOURNAMENTS"
+  | "OPEN"
+  | "ACTIVE"
+  | "COMPLETED";
+
+export type TournamentFilters = {
+  search?: string;
+  status?: TournamentStatus;
+  scope?: TournamentScope;
+  discipline?: string;
+  format?: string;
+  ownerId?: number;
+};
+
+export async function listTournaments(
+  filters: TournamentFilters = {},
+): Promise<TournamentListItem[]> {
+  const params = new URLSearchParams();
+
+  if (filters.search) {
+    params.set("search", filters.search);
+  }
+
+  if (filters.status) {
+    params.set("status", filters.status);
+  }
+
+  if (filters.scope && filters.scope !== "ALL") {
+    params.set("scope", filters.scope);
+  }
+
+  if (filters.discipline) {
+    params.set("discipline", filters.discipline);
+  }
+
+  if (filters.format) {
+    params.set("format", filters.format);
+  }
+
+  if (filters.ownerId) {
+    params.set("owner_id", String(filters.ownerId));
+  }
+
+  const query = params.toString();
+  return apiRequest<TournamentListItem[]>(
+    `/tournaments${query ? `?${query}` : ""}`,
+  );
 }
 
 export async function getTournament(tournamentId: number): Promise<TournamentRead> {

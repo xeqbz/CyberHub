@@ -18,11 +18,19 @@ import {
   type ActionLog,
   type DisputeStatus,
   type MatchDispute,
+  type ReportExportType,
 } from "@/src/shared/api/platform";
 import type { CurrentUser } from "@/src/shared/api/users";
 import { getAccessToken } from "@/src/shared/lib/auth";
 
 const ROLES = ["USER", "ORGANIZER", "ADMIN"] as const;
+const REPORT_EXPORTS: { type: ReportExportType; label: string }[] = [
+  { type: "users", label: "Export users" },
+  { type: "tournaments", label: "Export tournaments" },
+  { type: "matches", label: "Export matches" },
+  { type: "player_statistics", label: "Export player stats" },
+  { type: "action_logs", label: "Export action log" },
+];
 
 function formatDate(value: string): string {
   const date = new Date(value);
@@ -128,7 +136,7 @@ export default function AdminPage() {
     }
   }
 
-  async function handleExport(reportType: "users" | "tournaments" | "matches") {
+  async function handleExport(reportType: ReportExportType) {
     const token = getAccessToken();
     if (!token) return;
 
@@ -215,15 +223,15 @@ export default function AdminPage() {
           <button type="button" onClick={() => void loadAdminData()}>
             Refresh
           </button>
-          <button type="button" onClick={() => void handleExport("users")}>
-            Export users
-          </button>
-          <button type="button" onClick={() => void handleExport("tournaments")}>
-            Export tournaments
-          </button>
-          <button type="button" onClick={() => void handleExport("matches")}>
-            Export matches
-          </button>
+          {REPORT_EXPORTS.map((report) => (
+            <button
+              key={report.type}
+              type="button"
+              onClick={() => void handleExport(report.type)}
+            >
+              {report.label}
+            </button>
+          ))}
         </div>
       </section>
 

@@ -2,15 +2,17 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
-  addTeamMember,
   deleteTeam,
   getTeam,
+  inviteTeamMember,
+  listTeamInvitations,
   removeTeamMember,
   updateTeam,
   updateTeamMemberRole,
+  type TeamInvitation,
   type TeamMember,
   type TeamMemberRole,
   type TeamRead,
@@ -47,11 +49,12 @@ export default function TeamDetailsPage() {
   const [updateSuccess, setUpdateSuccess] = useState("");
   const [isUpdatingTeam, setIsUpdatingTeam] = useState(false);
 
-  const [newMemberUserId, setNewMemberUserId] = useState("");
+  const [newMemberUsername, setNewMemberUsername] = useState("");
   const [newMemberRole, setNewMemberRole] = useState<TeamMemberRole>("MEMBER");
   const [addMemberError, setAddMemberError] = useState("");
   const [addMemberSuccess, setAddMemberSuccess] = useState("");
   const [isAddingMember, setIsAddingMember] = useState(false);
+  const [pendingInvitations, setPendingInvitations] = useState<TeamInvitation[]>([]);
 
   const [memberActionError, setMemberActionError] = useState("");
   const [memberActionSuccess, setMemberActionSuccess] = useState("");
@@ -99,6 +102,25 @@ export default function TeamDetailsPage() {
     setEditDescription(data.description ?? "");
   }
 
+  const refreshInvitations = useCallback(async () => {
+    const token = getAccessToken();
+    if (!token || !isOwner) {
+      setPendingInvitations([]);
+      return;
+    }
+
+    setPendingInvitations(await listTeamInvitations(teamId, token));
+  }, [isOwner, teamId]);
+
+  useEffect(() => {
+    if (!isOwner) {
+      setPendingInvitations([]);
+      return;
+    }
+
+    void refreshInvitations();
+  }, [isOwner, refreshInvitations]);
+
   async function handleTeamUpdate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -142,8 +164,9 @@ export default function TeamDetailsPage() {
       return;
     }
 
-    if (!newMemberUserId) {
-      setAddMemberError("User ID is required");
+    const username = newMemberUsername.trim();
+    if (!username) {
+      setAddMemberError("Username is required");
       return;
     }
 
@@ -152,22 +175,22 @@ export default function TeamDetailsPage() {
     setIsAddingMember(true);
 
     try {
-      await addTeamMember(
+      await inviteTeamMember(
         teamId,
         {
-          user_id: Number(newMemberUserId),
+          username,
           role: newMemberRole,
         },
         token,
       );
 
-      setAddMemberSuccess("Member added successfully");
-      setNewMemberUserId("");
+      setAddMemberSuccess("Invitation sent successfully");
+      setNewMemberUsername("");
       setNewMemberRole("MEMBER");
-      await refreshTeam();
+      await refreshInvitations();
     } catch (err) {
       setAddMemberError(
-        err instanceof Error ? err.message : "Failed to add member",
+        err instanceof Error ? err.message : "Failed to invite member",
       );
     } finally {
       setIsAddingMember(false);
@@ -423,19 +446,18 @@ export default function TeamDetailsPage() {
             </section>
 
             <section>
-              <h2>Add member</h2>
+              <h2>Invite member</h2>
 
               {isOwner ? (
                 <form onSubmit={handleAddMember}>
                   <div className="form-group">
-                    <label htmlFor="new-member-id">User ID</label>
+                    <label htmlFor="new-member-username">Username</label>
                     <input
-                      id="new-member-id"
-                      type="number"
-                      min={1}
-                      value={newMemberUserId}
-                      onChange={(event) => setNewMemberUserId(event.target.value)}
-                      placeholder="Enter user ID"
+                      id="new-member-username"
+                      type="text"
+                      value={newMemberUsername}
+                      onChange={(event) => setNewMemberUsername(event.target.value)}
+                      placeholder="Enter username"
                       required
                     />
                   </div>
@@ -455,25 +477,50 @@ export default function TeamDetailsPage() {
                   </div>
 
                   {addMemberError ? (
-                    <Alert variant="error" title="Add member failed">
+                    <Alert variant="error" title="Invite failed">
                       {addMemberError}
                     </Alert>
                   ) : null}
 
                   {addMemberSuccess ? (
-                    <Alert variant="success" title="Member added">
+                    <Alert variant="success" title="Invitation sent">
                       {addMemberSuccess}
                     </Alert>
                   ) : null}
 
                   <button type="submit" disabled={isAddingMember}>
-                    {isAddingMember ? "Adding..." : "Add member"}
+                    {isAddingMember ? "Sending..." : "Send invitation"}
                   </button>
+
+                  {pendingInvitations.length > 0 ? (
+                    <div className="grid" style={{ marginTop: "18px" }}>
+                      {pendingInvitations.map((invitation) => (
+                        <div key={invitation.id} className="card">
+                          <div
+                            className="row"
+                            style={{
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                            }}
+                          >
+                            <div>
+                              <strong>{invitation.invited_user.username}</strong>
+                              <p className="muted">
+                                Invited as {invitation.role} ·{" "}
+                                {formatDate(invitation.created_at)}
+                              </p>
+                            </div>
+                            <StatusBadge value={invitation.status} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </form>
               ) : (
                 <EmptyState
                   title="Owner action only"
-                  description="Only the team owner can add members."
+                  description="Only the team owner can invite members."
                 />
               )}
             </section>

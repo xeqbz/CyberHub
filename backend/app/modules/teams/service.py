@@ -1,6 +1,17 @@
-from app.modules.teams.model import Team, TeamMember, TeamMemberRole
+from datetime import UTC, datetime, timedelta
+
+from app.modules.teams.model import (
+    Team,
+    TeamInvitation,
+    TeamInvitationStatus,
+    TeamMember,
+    TeamMemberRole,
+)
 from app.modules.teams.repository import TeamRepository
 from app.modules.teams.schemas import TeamCreate, TeamUpdate
+
+
+TEAM_INVITATION_COOLDOWN_HOURS = 24
 
 
 class TeamError(Exception):
@@ -32,6 +43,30 @@ class TeamOwnerRemovalError(TeamError):
 
 
 class TeamOwnerRoleChangeError(TeamError):
+    pass
+
+
+class TeamInvitationNotFoundError(TeamError):
+    pass
+
+
+class TeamInvitationAccessDeniedError(TeamError):
+    pass
+
+
+class TeamInvitationAlreadyExistsError(TeamError):
+    pass
+
+
+class TeamInvitationCooldownError(TeamError):
+    pass
+
+
+class TeamInvitationNotPendingError(TeamError):
+    pass
+
+
+class TeamInviteTargetNotFoundError(TeamError):
     pass
 
 
@@ -137,6 +172,110 @@ class TeamService:
             role=role,
         )
 
+    def create_invitation(
+        self,
+        team_id: int,
+        acting_user_id: int,
+        username: str,
+        role: TeamMemberRole = TeamMemberRole.MEMBER,
+    ) -> TeamInvitation:
+        team = self.get_team_or_raise(team_id)
+        self._ensure_owner_access(team, acting_user_id)
+
+        invited_user = self.repository.get_user_by_username(username.strip())
+        if invited_user is None:
+            raise TeamInviteTargetNotFoundError("User not found")
+
+        existing_member = self.repository.get_member(
+            team_id=team.id,
+            user_id=invited_user.id,
+        )
+        if existing_member is not None:
+            raise TeamMemberAlreadyExistsError("User is already a team member")
+
+        pending_invitation = self.repository.get_pending_invitation(
+            team_id=team.id,
+            invited_user_id=invited_user.id,
+        )
+        if pending_invitation is not None:
+            raise TeamInvitationAlreadyExistsError(
+                "User already has a pending invitation"
+            )
+
+        # Diploma demo anti-spam rule: the same team cannot repeatedly invite
+        # the same user within a short review window, even after decline.
+        recent_invitation = self.repository.get_recent_invitation(
+            team_id=team.id,
+            invited_user_id=invited_user.id,
+            since=datetime.now(UTC) - timedelta(hours=TEAM_INVITATION_COOLDOWN_HOURS),
+        )
+        if recent_invitation is not None:
+            raise TeamInvitationCooldownError(
+                "Invitation was already sent recently"
+            )
+
+        return self.repository.create_invitation(
+            team_id=team.id,
+            invited_user_id=invited_user.id,
+            invited_by_id=acting_user_id,
+            role=role,
+        )
+
+    def list_my_invitations(self, user_id: int) -> list[TeamInvitation]:
+        return self.repository.list_user_invitations(
+            user_id,
+            status=TeamInvitationStatus.PENDING,
+        )
+
+    def list_team_invitations(
+        self,
+        team_id: int,
+        acting_user_id: int,
+    ) -> list[TeamInvitation]:
+        team = self.get_team_or_raise(team_id)
+        self._ensure_owner_access(team, acting_user_id)
+        return self.repository.list_team_invitations(
+            team.id,
+            status=TeamInvitationStatus.PENDING,
+        )
+
+    def accept_invitation(
+        self,
+        invitation_id: int,
+        acting_user_id: int,
+    ) -> TeamInvitation:
+        invitation = self._get_invitation_or_raise(invitation_id)
+        self._ensure_invited_user_access(invitation, acting_user_id)
+        self._ensure_invitation_pending(invitation)
+
+        existing_member = self.repository.get_member(
+            team_id=invitation.team_id,
+            user_id=acting_user_id,
+        )
+        if existing_member is None:
+            self.repository.add_member(
+                team_id=invitation.team_id,
+                user_id=acting_user_id,
+                role=invitation.role,
+            )
+
+        invitation.status = TeamInvitationStatus.ACCEPTED
+        invitation.decided_at = datetime.now(UTC)
+        return self.repository.save_invitation(invitation)
+
+    def decline_invitation(
+        self,
+        invitation_id: int,
+        acting_user_id: int,
+    ) -> TeamInvitation:
+        invitation = self._get_invitation_or_raise(invitation_id)
+        self._ensure_invited_user_access(invitation, acting_user_id)
+        self._ensure_invitation_pending(invitation)
+
+        invitation.status = TeamInvitationStatus.DECLINED
+        invitation.decided_at = datetime.now(UTC)
+        return self.repository.save_invitation(invitation)
+
     def remove_member(
         self,
         team_id: int,
@@ -182,6 +321,27 @@ class TeamService:
     def list_members(self, team_id: int) -> list[TeamMember]:
         team = self.get_team_or_raise(team_id)
         return self.repository.list_members(team.id)
+
+    def _get_invitation_or_raise(self, invitation_id: int) -> TeamInvitation:
+        invitation = self.repository.get_invitation(invitation_id)
+        if invitation is None:
+            raise TeamInvitationNotFoundError("Team invitation not found")
+        return invitation
+
+    @staticmethod
+    def _ensure_invited_user_access(
+        invitation: TeamInvitation,
+        acting_user_id: int,
+    ) -> None:
+        if invitation.invited_user_id != acting_user_id:
+            raise TeamInvitationAccessDeniedError(
+                "Only invited user can perform this action"
+            )
+
+    @staticmethod
+    def _ensure_invitation_pending(invitation: TeamInvitation) -> None:
+        if invitation.status != TeamInvitationStatus.PENDING:
+            raise TeamInvitationNotPendingError("Team invitation is not pending")
 
     @staticmethod
     def _ensure_owner_access(team: Team, acting_user_id: int) -> None:

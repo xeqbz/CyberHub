@@ -36,6 +36,7 @@ def create_tournament(
     name: str = "Cyber Cup",
     status: str = "DRAFT",
     tournament_format: str = "single_elimination",
+    discipline: str = "CS2",
 ) -> dict:
     response = client.post(
         "/api/v1/tournaments",
@@ -44,6 +45,7 @@ def create_tournament(
             "description": "Main tournament",
             "status": status,
             "format": tournament_format,
+            "discipline": discipline,
             "max_teams": 8,
             "starts_at": None,
         },
@@ -164,6 +166,68 @@ def test_list_tournaments_returns_created_tournaments(client):
     names = [item["name"] for item in data]
     assert "Cyber Cup" in names
     assert "Night League" in names
+
+
+def test_list_tournaments_supports_server_filters(client):
+    first_owner = register_user(client, "vadim", "vadim@example.com")
+    second_owner = register_user(client, "alex", "alex@example.com")
+
+    create_tournament(
+        client,
+        first_owner["access_token"],
+        name="Cyber Cup",
+        status="REGISTRATION_OPEN",
+        tournament_format="single_elimination",
+        discipline="CS2",
+    )
+    create_tournament(
+        client,
+        second_owner["access_token"],
+        name="Dota Invitational",
+        status="COMPLETED",
+        tournament_format="round_robin",
+        discipline="Dota 2",
+    )
+
+    response = client.get(
+        "/api/v1/tournaments"
+        "?search=dota&status=COMPLETED&discipline=dota&format=round_robin"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert [item["name"] for item in data] == ["Dota Invitational"]
+
+
+def test_list_tournaments_supports_scope_and_owner_filters(client):
+    first_owner = register_user(client, "vadim", "vadim@example.com")
+    second_owner = register_user(client, "alex", "alex@example.com")
+
+    mine = create_tournament(
+        client,
+        first_owner["access_token"],
+        name="My Open Cup",
+        status="REGISTRATION_OPEN",
+    )
+    create_tournament(
+        client,
+        second_owner["access_token"],
+        name="Other Open Cup",
+        status="REGISTRATION_OPEN",
+    )
+    create_tournament(
+        client,
+        first_owner["access_token"],
+        name="Archived Cup",
+        status="COMPLETED",
+    )
+
+    response = client.get(
+        f"/api/v1/tournaments?scope=ACTIVE&owner_id={mine['owner_id']}"
+    )
+
+    assert response.status_code == 200
+    assert [item["name"] for item in response.json()] == ["My Open Cup"]
 
 
 def test_update_tournament_by_owner_returns_updated_tournament(client):

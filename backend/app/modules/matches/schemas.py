@@ -61,6 +61,11 @@ class MatchRead(BaseModel):
     away_score: int | None
     winner_team_id: int | None
     result_confirmed_by_id: int | None
+    proposed_home_score: int | None
+    proposed_away_score: int | None
+    proposed_winner_team_id: int | None
+    result_submitted_by_id: int | None
+    result_submitted_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -68,6 +73,7 @@ class MatchRead(BaseModel):
     home_team: TeamListItem
     away_team: TeamListItem
     winner_team: TeamListItem | None
+    proposed_winner_team: TeamListItem | None
 
 
 class MatchListItem(BaseModel):
@@ -87,5 +93,10 @@ class MatchListItem(BaseModel):
     away_score: int | None
     winner_team_id: int | None
     result_confirmed_by_id: int | None
+    proposed_home_score: int | None
+    proposed_away_score: int | None
+    proposed_winner_team_id: int | None
+    result_submitted_by_id: int | None
+    result_submitted_at: datetime | None
     created_at: datetime
     updated_at: datetime

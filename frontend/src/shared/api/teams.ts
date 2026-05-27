@@ -15,6 +15,7 @@ export type UserSummary = {
 };
 
 export type TeamMemberRole = "OWNER" | "MEMBER";
+export type TeamInvitationStatus = "PENDING" | "ACCEPTED" | "DECLINED";
 
 export type TeamMember = {
   id: number;
@@ -46,6 +47,21 @@ export type TeamRead = {
   members: TeamMember[];
 };
 
+export type TeamInvitation = {
+  id: number;
+  team_id: number;
+  invited_user_id: number;
+  invited_by_id: number | null;
+  role: TeamMemberRole;
+  status: TeamInvitationStatus;
+  decided_at: string | null;
+  created_at: string;
+  updated_at: string;
+  team: TeamListItem;
+  invited_user: UserSummary;
+  invited_by: UserSummary | null;
+};
+
 export type CreateTeamPayload = {
   name: string;
   description?: string;
@@ -58,6 +74,11 @@ export type UpdateTeamPayload = {
 
 export type AddTeamMemberPayload = {
   user_id: number;
+  role?: TeamMemberRole;
+};
+
+export type CreateTeamInvitationPayload = {
+  username: string;
   role?: TeamMemberRole;
 };
 
@@ -119,6 +140,61 @@ export async function addTeamMember(
     body: payload,
     token,
   });
+}
+
+export async function inviteTeamMember(
+  teamId: number,
+  payload: CreateTeamInvitationPayload,
+  token: string,
+): Promise<TeamInvitation> {
+  return apiRequest<TeamInvitation>(`/teams/${teamId}/invitations`, {
+    method: "POST",
+    body: payload,
+    token,
+  });
+}
+
+export async function listTeamInvitations(
+  teamId: number,
+  token: string,
+): Promise<TeamInvitation[]> {
+  return apiRequest<TeamInvitation[]>(`/teams/${teamId}/invitations`, {
+    token,
+  });
+}
+
+export async function listMyTeamInvitations(
+  token: string,
+): Promise<TeamInvitation[]> {
+  return apiRequest<TeamInvitation[]>("/teams/invitations/my", {
+    token,
+  });
+}
+
+export async function acceptTeamInvitation(
+  invitationId: number,
+  token: string,
+): Promise<TeamInvitation> {
+  return apiRequest<TeamInvitation>(
+    `/teams/invitations/${invitationId}/accept`,
+    {
+      method: "POST",
+      token,
+    },
+  );
+}
+
+export async function declineTeamInvitation(
+  invitationId: number,
+  token: string,
+): Promise<TeamInvitation> {
+  return apiRequest<TeamInvitation>(
+    `/teams/invitations/${invitationId}/decline`,
+    {
+      method: "POST",
+      token,
+    },
+  );
 }
 
 export async function updateTeamMemberRole(

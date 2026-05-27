@@ -16,6 +16,11 @@ celery_app.conf.update(
             "task": "platform.expire_stale_matchmaking_requests",
             "schedule": 60.0,
             "args": (30,),
+        },
+        "auto-confirm-stale-match-results": {
+            "task": "platform.auto_confirm_stale_match_results",
+            "schedule": 300.0,
+            "args": (24,),
         }
     },
     result_serializer="json",

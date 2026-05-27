@@ -4,11 +4,13 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.auth.dependencies import get_current_active_user
-from app.modules.platform.service import record_action
+from app.modules.platform.service import create_notification, record_action
 from app.modules.teams.model import TeamMemberRole
 from app.modules.teams.repository import TeamRepository
 from app.modules.teams.schemas import (
     TeamCreate,
+    TeamInvitationCreate,
+    TeamInvitationRead,
     TeamListItem,
     TeamMemberRead,
     TeamRead,
@@ -20,6 +22,12 @@ from app.modules.teams.service import (
     TeamMemberAlreadyExistsError,
     TeamMemberNotFoundError,
     TeamNotFoundError,
+    TeamInvitationAccessDeniedError,
+    TeamInvitationAlreadyExistsError,
+    TeamInvitationCooldownError,
+    TeamInvitationNotFoundError,
+    TeamInvitationNotPendingError,
+    TeamInviteTargetNotFoundError,
     TeamOwnerRemovalError,
     TeamOwnerRoleChangeError,
     TeamService,
@@ -91,6 +99,123 @@ def list_my_teams(
 ) -> list[TeamRead]:
     service = get_team_service(db)
     return service.list_user_teams(current_user.id)
+
+
+@router.get(
+    "/invitations/my",
+    response_model=list[TeamInvitationRead],
+    status_code=status.HTTP_200_OK,
+)
+def list_my_team_invitations(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> list[TeamInvitationRead]:
+    service = get_team_service(db)
+    return service.list_my_invitations(current_user.id)
+
+
+@router.post(
+    "/invitations/{invitation_id}/accept",
+    response_model=TeamInvitationRead,
+    status_code=status.HTTP_200_OK,
+)
+def accept_team_invitation(
+    invitation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> TeamInvitationRead:
+    service = get_team_service(db)
+
+    try:
+        invitation = service.accept_invitation(
+            invitation_id=invitation_id,
+            acting_user_id=current_user.id,
+        )
+    except TeamInvitationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Team invitation not found",
+        ) from exc
+    except TeamInvitationAccessDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except TeamInvitationNotPendingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    create_notification(
+        db,
+        user_id=invitation.team.owner_id,
+        title="Team invitation accepted",
+        message=f"{current_user.username} joined {invitation.team.name}.",
+        related_entity_type="team",
+        related_entity_id=invitation.team_id,
+    )
+    record_action(
+        db,
+        actor_id=current_user.id,
+        action="team_invitation_accepted",
+        entity_type="team_invitation",
+        entity_id=invitation.id,
+        details={"team_id": invitation.team_id},
+    )
+    return invitation
+
+
+@router.post(
+    "/invitations/{invitation_id}/decline",
+    response_model=TeamInvitationRead,
+    status_code=status.HTTP_200_OK,
+)
+def decline_team_invitation(
+    invitation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> TeamInvitationRead:
+    service = get_team_service(db)
+
+    try:
+        invitation = service.decline_invitation(
+            invitation_id=invitation_id,
+            acting_user_id=current_user.id,
+        )
+    except TeamInvitationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Team invitation not found",
+        ) from exc
+    except TeamInvitationAccessDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except TeamInvitationNotPendingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    create_notification(
+        db,
+        user_id=invitation.team.owner_id,
+        title="Team invitation declined",
+        message=f"{current_user.username} declined invitation to {invitation.team.name}.",
+        related_entity_type="team",
+        related_entity_id=invitation.team_id,
+    )
+    record_action(
+        db,
+        actor_id=current_user.id,
+        action="team_invitation_declined",
+        entity_type="team_invitation",
+        entity_id=invitation.id,
+        details={"team_id": invitation.team_id},
+    )
+    return invitation
 
 
 @router.get(
@@ -200,6 +325,109 @@ def list_team_members(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Team not found",
         ) from exc
+
+
+@router.get(
+    "/{team_id}/invitations",
+    response_model=list[TeamInvitationRead],
+    status_code=status.HTTP_200_OK,
+)
+def list_team_invitations(
+    team_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> list[TeamInvitationRead]:
+    service = get_team_service(db)
+
+    try:
+        return service.list_team_invitations(
+            team_id=team_id,
+            acting_user_id=current_user.id,
+        )
+    except TeamNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Team not found",
+        ) from exc
+    except TeamAccessDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only team owner can perform this action",
+        ) from exc
+
+
+@router.post(
+    "/{team_id}/invitations",
+    response_model=TeamInvitationRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_team_invitation(
+    team_id: int,
+    payload: TeamInvitationCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> TeamInvitationRead:
+    service = get_team_service(db)
+
+    try:
+        invitation = service.create_invitation(
+            team_id=team_id,
+            acting_user_id=current_user.id,
+            username=payload.username,
+            role=payload.role,
+        )
+    except TeamNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Team not found",
+        ) from exc
+    except TeamInviteTargetNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        ) from exc
+    except TeamAccessDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only team owner can perform this action",
+        ) from exc
+    except TeamMemberAlreadyExistsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User is already a team member",
+        ) from exc
+    except TeamInvitationAlreadyExistsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User already has a pending invitation",
+        ) from exc
+    except TeamInvitationCooldownError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Invitation was already sent recently",
+        ) from exc
+
+    create_notification(
+        db,
+        user_id=invitation.invited_user_id,
+        title="Team invitation",
+        message=f"You were invited to join {invitation.team.name}.",
+        related_entity_type="team_invitation",
+        related_entity_id=invitation.id,
+    )
+    record_action(
+        db,
+        actor_id=current_user.id,
+        action="team_invitation_created",
+        entity_type="team_invitation",
+        entity_id=invitation.id,
+        details={
+            "team_id": team_id,
+            "username": payload.username,
+            "role": payload.role,
+        },
+    )
+    return invitation
 
 
 @router.post(

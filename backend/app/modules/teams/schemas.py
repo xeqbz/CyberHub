@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.modules.teams.model import TeamMemberRole
+from app.modules.teams.model import TeamInvitationStatus, TeamMemberRole
 from app.modules.users.schemas import UserRead
 
 
@@ -58,6 +58,35 @@ class TeamMemberRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     user: UserRead
+
+
+class TeamInvitationCreate(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    role: TeamMemberRole = TeamMemberRole.MEMBER
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def normalize_username(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+
+class TeamInvitationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    team_id: int
+    invited_user_id: int
+    invited_by_id: int | None
+    role: TeamMemberRole
+    status: TeamInvitationStatus
+    decided_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+    team: "TeamListItem"
+    invited_user: UserRead
+    invited_by: UserRead | None
 
 
 class TeamRead(BaseModel):

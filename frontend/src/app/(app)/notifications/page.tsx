@@ -11,6 +11,12 @@ import {
   type NotificationRead,
   type PlatformRealtimeEvent,
 } from "@/src/shared/api/platform";
+import {
+  acceptTeamInvitation,
+  declineTeamInvitation,
+  listMyTeamInvitations,
+  type TeamInvitation,
+} from "@/src/shared/api/teams";
 import { getWebSocketUrl } from "@/src/shared/config/api";
 import { getAccessToken } from "@/src/shared/lib/auth";
 
@@ -21,9 +27,11 @@ function formatDate(value: string): string {
 
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<NotificationRead[]>([]);
+  const [invitations, setInvitations] = useState<TeamInvitation[]>([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [busyInvitationId, setBusyInvitationId] = useState<number | null>(null);
   const [liveStatus, setLiveStatus] = useState<"connecting" | "live" | "offline">(
     "connecting",
   );
@@ -39,12 +47,23 @@ export default function NotificationsPage() {
     try {
       setError("");
       setIsLoading(true);
-      setNotifications(await listNotifications(token));
+      const [notificationData, invitationData] = await Promise.all([
+        listNotifications(token),
+        listMyTeamInvitations(token),
+      ]);
+      setNotifications(notificationData);
+      setInvitations(invitationData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load notifications");
     } finally {
       setIsLoading(false);
     }
+  }, []);
+
+  const loadInvitations = useCallback(async () => {
+    const token = getAccessToken();
+    if (!token) return;
+    setInvitations(await listMyTeamInvitations(token));
   }, []);
 
   useEffect(() => {
@@ -71,6 +90,7 @@ export default function NotificationsPage() {
         const message = JSON.parse(event.data) as PlatformRealtimeEvent;
         if (message.type === "notifications.snapshot") {
           setNotifications(message.payload.notifications);
+          void loadInvitations();
           setIsLoading(false);
         }
       } catch {
@@ -92,7 +112,7 @@ export default function NotificationsPage() {
       isClosed = true;
       socket.close();
     };
-  }, []);
+  }, [loadInvitations]);
 
   const unreadCount = useMemo(
     () => notifications.filter((item) => !item.is_read).length,
@@ -111,6 +131,28 @@ export default function NotificationsPage() {
       setError(err instanceof Error ? err.message : "Failed to update notification");
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function handleInvitationAction(
+    invitationId: number,
+    action: "accept" | "decline",
+  ) {
+    const token = getAccessToken();
+    if (!token) return;
+
+    try {
+      setBusyInvitationId(invitationId);
+      if (action === "accept") {
+        await acceptTeamInvitation(invitationId, token);
+      } else {
+        await declineTeamInvitation(invitationId, token);
+      }
+      await loadNotifications();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update invitation");
+    } finally {
+      setBusyInvitationId(null);
     }
   }
 
@@ -156,6 +198,56 @@ export default function NotificationsPage() {
         <Alert variant="error" title="Notifications unavailable">
           {error}
         </Alert>
+      ) : null}
+
+      {!isLoading && invitations.length > 0 ? (
+        <section className="card" style={{ marginBottom: "24px" }}>
+          <h2>Team invitations</h2>
+          <div className="grid" style={{ marginTop: "18px" }}>
+            {invitations.map((invitation) => (
+              <div key={invitation.id} className="card">
+                <div
+                  className="row"
+                  style={{ justifyContent: "space-between", alignItems: "center" }}
+                >
+                  <div>
+                    <h3>{invitation.team.name}</h3>
+                    <p>
+                      Invited by {invitation.invited_by?.username ?? "team owner"} as{" "}
+                      {invitation.role}.
+                    </p>
+                    <p className="muted" style={{ marginTop: "8px" }}>
+                      {formatDate(invitation.created_at)}
+                    </p>
+                  </div>
+                  <span className="badge">{invitation.status}</span>
+                </div>
+
+                <div className="row" style={{ marginTop: "14px" }}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleInvitationAction(invitation.id, "accept")
+                    }
+                    disabled={busyInvitationId === invitation.id}
+                  >
+                    {busyInvitationId === invitation.id ? "Saving..." : "Accept"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() =>
+                      void handleInvitationAction(invitation.id, "decline")
+                    }
+                    disabled={busyInvitationId === invitation.id}
+                  >
+                    {busyInvitationId === invitation.id ? "Saving..." : "Decline"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
       ) : null}
 
       {isLoading ? (

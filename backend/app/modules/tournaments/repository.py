@@ -1,10 +1,13 @@
-from sqlalchemy import select
+from collections.abc import Sequence
+
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.modules.tournaments.model import (
     Tournament,
     TournamentParticipant,
     TournamentParticipantStatus,
+    TournamentStatus,
 )
 
 
@@ -29,14 +32,47 @@ class TournamentRepository:
         stmt = select(Tournament).where(Tournament.name == name)
         return self.db.scalar(stmt)
 
-    def list_tournaments(self, offset: int = 0, limit: int = 100) -> list[Tournament]:
+    def list_tournaments(
+        self,
+        offset: int = 0,
+        limit: int = 100,
+        *,
+        search: str | None = None,
+        statuses: Sequence[TournamentStatus] | None = None,
+        discipline: str | None = None,
+        format: str | None = None,
+        owner_id: int | None = None,
+    ) -> list[Tournament]:
         stmt = (
             select(Tournament)
             .options(joinedload(Tournament.owner))
-            .order_by(Tournament.id)
-            .offset(offset)
-            .limit(limit)
         )
+
+        if search:
+            pattern = f"%{search.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    Tournament.name.ilike(pattern),
+                    Tournament.description.ilike(pattern),
+                    Tournament.discipline.ilike(pattern),
+                    Tournament.format.ilike(pattern),
+                )
+            )
+
+        if statuses:
+            stmt = stmt.where(Tournament.status.in_(statuses))
+
+        if discipline:
+            stmt = stmt.where(Tournament.discipline.ilike(f"%{discipline.strip()}%"))
+
+        if format:
+            stmt = stmt.where(Tournament.format == format.strip())
+
+        if owner_id is not None:
+            stmt = stmt.where(Tournament.owner_id == owner_id)
+
+        stmt = stmt.order_by(Tournament.created_at.desc(), Tournament.id.desc())
+        stmt = stmt.offset(offset).limit(limit)
         return list(self.db.scalars(stmt).unique().all())
 
     def list_by_owner(self, owner_id: int) -> list[Tournament]:

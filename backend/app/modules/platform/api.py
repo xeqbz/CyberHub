@@ -1,4 +1,5 @@
 import csv
+import json
 from datetime import UTC, datetime
 from io import StringIO
 
@@ -10,6 +11,8 @@ from sqlalchemy.orm import Session, joinedload
 from app.db.session import get_db
 from app.modules.auth.dependencies import get_current_active_user, require_roles
 from app.modules.matches.model import Match, MatchStatus
+from app.modules.matches.repository import MatchRepository
+from app.modules.matches.service import MatchResultNotPendingError, MatchService
 from app.modules.platform.model import (
     ActionLog,
     DisputeStatus,
@@ -37,11 +40,13 @@ from app.modules.platform.schemas import (
 )
 from app.modules.platform.service import create_notification, record_action
 from app.modules.teams.model import Team
+from app.modules.teams.repository import TeamRepository
 from app.modules.tournaments.model import (
     Tournament,
     TournamentParticipant,
     TournamentParticipantStatus,
 )
+from app.modules.tournaments.repository import TournamentRepository
 from app.modules.users.model import User, UserRole
 from app.modules.users.repository import UserRepository
 from app.modules.users.schemas import UserRead, UserUpdate
@@ -164,17 +169,30 @@ def _apply_elo(match: RankedMatch) -> None:
 )
 def list_rankings(
     search: str | None = Query(default=None),
+    sort_by: str = Query(default="rating", pattern="^(rating|wins|matches)$"),
+    min_matches: int = Query(default=0, ge=0),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
     db: Session = Depends(get_db),
 ) -> list[User]:
     stmt = select(User).where(User.is_active.is_(True))
+    matches_played = User.wins + User.losses + User.draws
 
     if search:
         pattern = f"%{search.strip()}%"
         stmt = stmt.where(User.username.ilike(pattern))
 
-    stmt = stmt.order_by(User.rating.desc(), User.wins.desc(), User.id).offset(offset)
+    if min_matches > 0:
+        stmt = stmt.where(matches_played >= min_matches)
+
+    if sort_by == "wins":
+        stmt = stmt.order_by(User.wins.desc(), User.rating.desc(), User.id)
+    elif sort_by == "matches":
+        stmt = stmt.order_by(matches_played.desc(), User.rating.desc(), User.id)
+    else:
+        stmt = stmt.order_by(User.rating.desc(), User.wins.desc(), User.id)
+
+    stmt = stmt.offset(offset)
     stmt = stmt.limit(limit)
     return list(db.scalars(stmt).all())
 
@@ -926,6 +944,28 @@ def admin_resolve_dispute(
     dispute.resolved_at = datetime.now(UTC)
     db.add(dispute)
     db.commit()
+    match_result_outcome = None
+
+    if dispute.match.status == MatchStatus.DISPUTED:
+        match_service = MatchService(
+            repository=MatchRepository(db),
+            tournament_repository=TournamentRepository(db),
+            team_repository=TeamRepository(db),
+        )
+        try:
+            # Diploma demo: accepting a dispute rejects the proposed result;
+            # rejecting a dispute confirms the proposed result.
+            if payload.status == DisputeStatus.RESOLVED:
+                match_service.reject_pending_result(dispute.match_id)
+                match_result_outcome = "proposed_result_rejected"
+            else:
+                match_service.confirm_disputed_result(
+                    dispute.match_id,
+                    acting_user_id=current_user.id,
+                )
+                match_result_outcome = "proposed_result_confirmed"
+        except MatchResultNotPendingError:
+            match_result_outcome = "no_match_result_change"
 
     create_notification(
         db,
@@ -941,7 +981,11 @@ def admin_resolve_dispute(
         action="admin_dispute_resolved",
         entity_type="match_dispute",
         entity_id=dispute.id,
-        details={"status": dispute.status, "resolution": dispute.resolution},
+        details={
+            "status": dispute.status,
+            "resolution": dispute.resolution,
+            "match_result_outcome": match_result_outcome,
+        },
     )
 
     stmt = (
@@ -984,6 +1028,56 @@ def admin_list_action_logs(
     return list(db.scalars(stmt).unique().all())
 
 
+def _enum_value(value: object) -> object:
+    return getattr(value, "value", value)
+
+
+def _build_player_statistics_rows(db: Session) -> list[dict[str, object]]:
+    users = list(db.scalars(select(User).order_by(User.rating.desc(), User.id)).all())
+    ranked_matches = list(
+        db.scalars(
+            select(RankedMatch).where(RankedMatch.status == RankedMatchStatus.COMPLETED)
+        ).all()
+    )
+    rows: list[dict[str, object]] = []
+
+    for user in users:
+        kills = 0
+        deaths = 0
+        assists = 0
+        ranked_matches_count = 0
+
+        for match in ranked_matches:
+            if match.player_one_id == user.id:
+                ranked_matches_count += 1
+                kills += match.player_one_kills
+                deaths += match.player_one_deaths
+                assists += match.player_one_assists
+            elif match.player_two_id == user.id:
+                ranked_matches_count += 1
+                kills += match.player_two_kills
+                deaths += match.player_two_deaths
+                assists += match.player_two_assists
+
+        rows.append(
+            {
+                "user_id": user.id,
+                "username": user.username,
+                "rating": user.rating,
+                "ranked_matches": ranked_matches_count,
+                "wins": user.wins,
+                "losses": user.losses,
+                "draws": user.draws,
+                "kills": kills,
+                "deaths": deaths,
+                "assists": assists,
+                "kda": RankedMatch.calculate_kda(kills, deaths, assists),
+            }
+        )
+
+    return rows
+
+
 def _build_report_rows(db: Session, report_type: str) -> list[dict[str, object]]:
     if report_type == "users":
         users = db.scalars(select(User).order_by(User.id)).all()
@@ -992,7 +1086,7 @@ def _build_report_rows(db: Session, report_type: str) -> list[dict[str, object]]
                 "id": user.id,
                 "username": user.username,
                 "email": user.email,
-                "role": user.role,
+                "role": _enum_value(user.role),
                 "is_active": user.is_active,
                 "rating": user.rating,
                 "wins": user.wins,
@@ -1010,7 +1104,7 @@ def _build_report_rows(db: Session, report_type: str) -> list[dict[str, object]]
                 "name": tournament.name,
                 "discipline": tournament.discipline,
                 "format": tournament.format,
-                "status": tournament.status,
+                "status": _enum_value(tournament.status),
                 "max_teams": tournament.max_teams,
                 "starts_at": tournament.starts_at,
             }
@@ -1025,12 +1119,42 @@ def _build_report_rows(db: Session, report_type: str) -> list[dict[str, object]]
                 "tournament_id": match.tournament_id,
                 "home_team_id": match.home_team_id,
                 "away_team_id": match.away_team_id,
-                "status": match.status,
+                "status": _enum_value(match.status),
                 "home_score": match.home_score,
                 "away_score": match.away_score,
                 "winner_team_id": match.winner_team_id,
             }
             for match in matches
+        ]
+
+    if report_type == "player_statistics":
+        return _build_player_statistics_rows(db)
+
+    if report_type == "action_logs":
+        action_logs = db.scalars(
+            select(ActionLog)
+            .options(joinedload(ActionLog.actor))
+            .order_by(ActionLog.created_at.desc(), ActionLog.id.desc())
+            .limit(500)
+        ).all()
+        return [
+            {
+                "id": action_log.id,
+                "actor_id": action_log.actor_id,
+                "actor_username": action_log.actor.username
+                if action_log.actor is not None
+                else None,
+                "action": action_log.action,
+                "entity_type": action_log.entity_type,
+                "entity_id": action_log.entity_id,
+                "details": json.dumps(
+                    action_log.details or {},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                "created_at": action_log.created_at,
+            }
+            for action_log in action_logs
         ]
 
     raise HTTPException(
@@ -1046,7 +1170,7 @@ def _build_report_rows(db: Session, report_type: str) -> list[dict[str, object]]
 def admin_export_report(
     report_type: str = Query(
         default="tournaments",
-        pattern="^(users|tournaments|matches)$",
+        pattern="^(users|tournaments|matches|player_statistics|action_logs)$",
     ),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.ADMIN, UserRole.ORGANIZER)),

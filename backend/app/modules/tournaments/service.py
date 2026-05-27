@@ -106,8 +106,26 @@ class TournamentService:
     def get_tournament_by_name(self, name: str) -> Tournament | None:
         return self.repository.get_by_name(name.strip())
 
-    def list_tournaments(self, offset: int = 0, limit: int = 100) -> list[Tournament]:
-        return self.repository.list_tournaments(offset=offset, limit=limit)
+    def list_tournaments(
+        self,
+        offset: int = 0,
+        limit: int = 100,
+        *,
+        search: str | None = None,
+        statuses: list[TournamentStatus] | None = None,
+        discipline: str | None = None,
+        format: str | None = None,
+        owner_id: int | None = None,
+    ) -> list[Tournament]:
+        return self.repository.list_tournaments(
+            offset=offset,
+            limit=limit,
+            search=search,
+            statuses=statuses,
+            discipline=discipline,
+            format=format,
+            owner_id=owner_id,
+        )
 
     def list_owner_tournaments(self, owner_id: int) -> list[Tournament]:
         return self.repository.list_by_owner(owner_id)

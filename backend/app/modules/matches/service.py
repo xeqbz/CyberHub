@@ -53,6 +53,14 @@ class MatchInvalidScoreError(MatchError):
     pass
 
 
+class MatchResultAlreadySubmittedError(MatchError):
+    pass
+
+
+class MatchResultNotPendingError(MatchError):
+    pass
+
+
 class MatchService:
     def __init__(
         self,
@@ -161,6 +169,7 @@ class MatchService:
             completed_at_was_provided = True
             completed_at = datetime.now(UTC)
             result_confirmed_by_id = acting_user_id
+            self._clear_pending_result(match)
 
         updated_match = self.repository.update(
             match,
@@ -200,6 +209,7 @@ class MatchService:
             away_score=data.away_score,
             winner_team_id=data.winner_team_id,
         )
+        self._clear_pending_result(match)
 
         updated_match = self.repository.update(
             match,
@@ -216,6 +226,91 @@ class MatchService:
             self._advance_bracket_after_completion(updated_match, tournament)
 
         return self.get_match_or_raise(updated_match.id)
+
+    def submit_match_result(
+        self,
+        match_id: int,
+        acting_user_id: int,
+        data: MatchScoreUpdate,
+    ) -> Match:
+        match = self.get_match_or_raise(match_id)
+        tournament = self._get_tournament_or_raise(match.tournament_id)
+        self._ensure_result_participant_access(match, tournament, acting_user_id)
+
+        if match.status in {MatchStatus.COMPLETED, MatchStatus.CANCELLED}:
+            raise MatchResultAlreadySubmittedError(
+                "Completed or cancelled match cannot receive a proposed result"
+            )
+        if match.status in {
+            MatchStatus.PENDING_CONFIRMATION,
+            MatchStatus.DISPUTED,
+        }:
+            raise MatchResultAlreadySubmittedError(
+                "Match result is already waiting for review"
+            )
+
+        winner_team_id = self._resolve_winner_team_id(
+            home_team_id=match.home_team_id,
+            away_team_id=match.away_team_id,
+            home_score=data.home_score,
+            away_score=data.away_score,
+            winner_team_id=data.winner_team_id,
+        )
+        if winner_team_id is None:
+            raise MatchInvalidWinnerError("Submitted result must have a winner")
+
+        match.status = MatchStatus.PENDING_CONFIRMATION
+        match.proposed_home_score = data.home_score
+        match.proposed_away_score = data.away_score
+        match.proposed_winner_team_id = winner_team_id
+        match.result_submitted_by_id = acting_user_id
+        match.result_submitted_at = datetime.now(UTC)
+        self.repository.save(match)
+        return self.get_match_or_raise(match.id)
+
+    @staticmethod
+    def _clear_pending_result(match: Match) -> None:
+        match.proposed_home_score = None
+        match.proposed_away_score = None
+        match.proposed_winner_team_id = None
+        match.result_submitted_by_id = None
+        match.result_submitted_at = None
+
+    def confirm_match_result(self, match_id: int, acting_user_id: int) -> Match:
+        match = self.get_match_or_raise(match_id)
+        tournament = self._get_tournament_or_raise(match.tournament_id)
+        self._ensure_pending_result_response_access(match, tournament, acting_user_id)
+        return self._apply_pending_result(match, tournament, acting_user_id)
+
+    def dispute_match_result(self, match_id: int, acting_user_id: int) -> Match:
+        match = self.get_match_or_raise(match_id)
+        tournament = self._get_tournament_or_raise(match.tournament_id)
+        self._ensure_pending_result_response_access(match, tournament, acting_user_id)
+
+        match.status = MatchStatus.DISPUTED
+        self.repository.save(match)
+        return self.get_match_or_raise(match.id)
+
+    def reject_pending_result(self, match_id: int) -> Match:
+        match = self.get_match_or_raise(match_id)
+        if match.status != MatchStatus.DISPUTED:
+            raise MatchResultNotPendingError("Match result is not disputed")
+
+        match.status = MatchStatus.SCHEDULED
+        match.proposed_home_score = None
+        match.proposed_away_score = None
+        match.proposed_winner_team_id = None
+        match.result_submitted_by_id = None
+        match.result_submitted_at = None
+        self.repository.save(match)
+        return self.get_match_or_raise(match.id)
+
+    def confirm_disputed_result(self, match_id: int, acting_user_id: int) -> Match:
+        match = self.get_match_or_raise(match_id)
+        tournament = self._get_tournament_or_raise(match.tournament_id)
+        if match.status != MatchStatus.DISPUTED:
+            raise MatchResultNotPendingError("Match result is not disputed")
+        return self._apply_pending_result(match, tournament, acting_user_id)
 
     def delete_match(self, match_id: int, acting_user_id: int) -> None:
         match = self.get_match_or_raise(match_id)
@@ -268,6 +363,77 @@ class MatchService:
             raise MatchAccessDeniedError(
                 "Only tournament owner can perform this action"
             )
+
+    @staticmethod
+    def _is_match_participant_owner(match: Match, acting_user_id: int) -> bool:
+        return acting_user_id in {match.home_team.owner_id, match.away_team.owner_id}
+
+    def _ensure_result_participant_access(
+        self,
+        match: Match,
+        tournament: Tournament,
+        acting_user_id: int,
+    ) -> None:
+        if tournament.owner_id == acting_user_id:
+            return
+        if self._is_match_participant_owner(match, acting_user_id):
+            return
+        raise MatchAccessDeniedError(
+            "Only tournament owner or match team owners can perform this action"
+        )
+
+    def _ensure_pending_result_response_access(
+        self,
+        match: Match,
+        tournament: Tournament,
+        acting_user_id: int,
+    ) -> None:
+        if match.status != MatchStatus.PENDING_CONFIRMATION:
+            raise MatchResultNotPendingError("Match result is not pending confirmation")
+        if (
+            match.proposed_home_score is None
+            or match.proposed_away_score is None
+            or match.proposed_winner_team_id is None
+        ):
+            raise MatchResultNotPendingError("Match has no proposed result")
+
+        if tournament.owner_id == acting_user_id:
+            return
+        if not self._is_match_participant_owner(match, acting_user_id):
+            raise MatchAccessDeniedError(
+                "Only tournament owner or match team owners can perform this action"
+            )
+        if match.result_submitted_by_id == acting_user_id:
+            raise MatchAccessDeniedError(
+                "Result submitter cannot confirm or dispute their own submission"
+            )
+
+    def _apply_pending_result(
+        self,
+        match: Match,
+        tournament: Tournament,
+        acting_user_id: int,
+    ) -> Match:
+        if (
+            match.proposed_home_score is None
+            or match.proposed_away_score is None
+            or match.proposed_winner_team_id is None
+        ):
+            raise MatchResultNotPendingError("Match has no proposed result")
+
+        was_completed = match.status == MatchStatus.COMPLETED
+        match.home_score = match.proposed_home_score
+        match.away_score = match.proposed_away_score
+        match.winner_team_id = match.proposed_winner_team_id
+        match.result_confirmed_by_id = acting_user_id
+        match.completed_at = datetime.now(UTC)
+        match.status = MatchStatus.COMPLETED
+        self.repository.save(match)
+
+        if not was_completed:
+            self._advance_bracket_after_completion(match, tournament)
+
+        return self.get_match_or_raise(match.id)
 
     @staticmethod
     def _resolve_winner_team_id(

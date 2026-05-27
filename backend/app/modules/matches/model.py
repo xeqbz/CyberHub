@@ -14,6 +14,8 @@ from app.modules.users.model import User
 class MatchStatus(str, Enum):
     SCHEDULED = "SCHEDULED"
     IN_PROGRESS = "IN_PROGRESS"
+    PENDING_CONFIRMATION = "PENDING_CONFIRMATION"
+    DISPUTED = "DISPUTED"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
 
@@ -91,6 +93,28 @@ class Match(BaseModel):
         nullable=True,
         index=True,
     )
+    proposed_home_score: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    proposed_away_score: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    proposed_winner_team_id: Mapped[int | None] = mapped_column(
+        ForeignKey("teams.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    result_submitted_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    result_submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     tournament: Mapped[Tournament] = relationship(
         "Tournament",
@@ -111,4 +135,12 @@ class Match(BaseModel):
     result_confirmed_by: Mapped[User | None] = relationship(
         "User",
         foreign_keys=[result_confirmed_by_id],
+    )
+    proposed_winner_team: Mapped[Team | None] = relationship(
+        "Team",
+        foreign_keys=[proposed_winner_team_id],
+    )
+    result_submitted_by: Mapped[User | None] = relationship(
+        "User",
+        foreign_keys=[result_submitted_by_id],
     )

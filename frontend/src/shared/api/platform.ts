@@ -162,9 +162,37 @@ export type AdminUserUpdatePayload = {
   role?: "USER" | "ORGANIZER" | "ADMIN";
 };
 
-export async function listRankings(search?: string): Promise<RankingUser[]> {
-  const query = search ? `?search=${encodeURIComponent(search)}` : "";
-  return apiRequest<RankingUser[]>(`/rankings${query}`);
+export type RankingSort = "rating" | "wins" | "matches";
+
+export type RankingFilters = {
+  search?: string;
+  sortBy?: RankingSort;
+  minMatches?: number;
+};
+
+export async function listRankings(
+  searchOrFilters?: string | RankingFilters,
+): Promise<RankingUser[]> {
+  const filters =
+    typeof searchOrFilters === "string"
+      ? { search: searchOrFilters }
+      : searchOrFilters;
+  const params = new URLSearchParams();
+
+  if (filters?.search) {
+    params.set("search", filters.search);
+  }
+
+  if (filters?.sortBy) {
+    params.set("sort_by", filters.sortBy);
+  }
+
+  if (filters?.minMatches && filters.minMatches > 0) {
+    params.set("min_matches", String(filters.minMatches));
+  }
+
+  const query = params.toString();
+  return apiRequest<RankingUser[]>(`/rankings${query ? `?${query}` : ""}`);
 }
 
 export async function getOverviewStats(): Promise<OverviewStats> {
@@ -305,8 +333,13 @@ export async function adminListActionLogs(token: string): Promise<ActionLog[]> {
   return apiRequest<ActionLog[]>("/admin/action-logs", { token });
 }
 
-export function buildReportExportUrl(
-  reportType: "users" | "tournaments" | "matches",
-): string {
+export type ReportExportType =
+  | "users"
+  | "tournaments"
+  | "matches"
+  | "player_statistics"
+  | "action_logs";
+
+export function buildReportExportUrl(reportType: ReportExportType): string {
   return `${API_URL}/admin/reports/export?report_type=${reportType}`;
 }

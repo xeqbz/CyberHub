@@ -6,29 +6,44 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Alert from "@/src/components/ui/alert";
 import EmptyState from "@/src/components/ui/empty-state";
 import { useCurrentUser } from "@/src/hooks/use-current-user";
-import { listRankings, type RankingUser } from "@/src/shared/api/platform";
+import {
+  listRankings,
+  type RankingSort,
+  type RankingUser,
+} from "@/src/shared/api/platform";
 
 export default function RankingsPage() {
   const { user } = useCurrentUser();
   const [rankings, setRankings] = useState<RankingUser[]>([]);
   const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<RankingSort>("rating");
+  const [minMatches, setMinMatches] = useState("0");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const loadRankings = useCallback(async (nextSearch = "") => {
+  const loadRankings = useCallback(async () => {
     try {
       setError("");
       setIsLoading(true);
-      setRankings(await listRankings(nextSearch.trim() || undefined));
+      const numericMinMatches = Number(minMatches);
+      setRankings(
+        await listRankings({
+          search: search.trim() || undefined,
+          sortBy,
+          minMatches: Number.isFinite(numericMinMatches)
+            ? numericMinMatches
+            : 0,
+        }),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load rankings");
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [minMatches, search, sortBy]);
 
   useEffect(() => {
-    void loadRankings("");
+    void loadRankings();
   }, [loadRankings]);
 
   const currentUserRank = useMemo(() => {
@@ -51,7 +66,7 @@ export default function RankingsPage() {
           <Link href="/statistics" className="btn btn-secondary">
             Statistics
           </Link>
-          <button type="button" onClick={() => void loadRankings(search)}>
+          <button type="button" onClick={() => void loadRankings()}>
             Refresh
           </button>
         </div>
@@ -61,17 +76,43 @@ export default function RankingsPage() {
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            void loadRankings(search);
+            void loadRankings();
           }}
         >
-          <div className="form-group">
-            <label htmlFor="ranking-search">Search player</label>
-            <input
-              id="ranking-search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Username"
-            />
+          <div className="grid grid-3">
+            <div className="form-group">
+              <label htmlFor="ranking-search">Search player</label>
+              <input
+                id="ranking-search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Username"
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="ranking-sort">Sort by</label>
+              <select
+                id="ranking-sort"
+                value={sortBy}
+                onChange={(event) => setSortBy(event.target.value as RankingSort)}
+              >
+                <option value="rating">Rating</option>
+                <option value="wins">Wins</option>
+                <option value="matches">Matches played</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="ranking-min-matches">Min matches</label>
+              <input
+                id="ranking-min-matches"
+                type="number"
+                min={0}
+                value={minMatches}
+                onChange={(event) => setMinMatches(event.target.value)}
+              />
+            </div>
           </div>
           <div className="row">
             <button type="submit">Search</button>
@@ -80,7 +121,8 @@ export default function RankingsPage() {
               className="btn btn-secondary"
               onClick={() => {
                 setSearch("");
-                void loadRankings("");
+                setSortBy("rating");
+                setMinMatches("0");
               }}
             >
               Reset

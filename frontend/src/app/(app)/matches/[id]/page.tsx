@@ -5,8 +5,11 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import {
+  confirmMatchResult,
   deleteMatch,
+  disputeMatchResult,
   getMatch,
+  submitMatchResult,
   updateMatch,
   updateMatchScore,
   type MatchRead,
@@ -21,6 +24,8 @@ import StatusBadge from "@/src/components/ui/status-badge";
 const MATCH_STATUS_OPTIONS = [
   "SCHEDULED",
   "IN_PROGRESS",
+  "PENDING_CONFIRMATION",
+  "DISPUTED",
   "COMPLETED",
   "CANCELLED",
 ] as const;
@@ -114,6 +119,25 @@ export default function MatchDetailsPage() {
   const isOwner = Boolean(
     currentUser && match && currentUser.id === match.tournament.owner_id,
   );
+  const isParticipantOwner = Boolean(
+    currentUser &&
+      match &&
+      (currentUser.id === match.home_team.owner_id ||
+        currentUser.id === match.away_team.owner_id),
+  );
+  const canManageResult = isOwner || isParticipantOwner;
+  const canSubmitProposedResult = Boolean(
+    match &&
+      canManageResult &&
+      (match.status === "SCHEDULED" || match.status === "IN_PROGRESS"),
+  );
+  const canReviewProposedResult = Boolean(
+    currentUser &&
+      match &&
+      match.status === "PENDING_CONFIRMATION" &&
+      (isOwner ||
+        (isParticipantOwner && match.result_submitted_by_id !== currentUser.id)),
+  );
 
   const numericHomeScore = useMemo(() => getNumericValue(homeScore), [homeScore]);
   const numericAwayScore = useMemo(() => getNumericValue(awayScore), [awayScore]);
@@ -126,7 +150,8 @@ export default function MatchDetailsPage() {
   }, [match, numericHomeScore, numericAwayScore]);
 
   const hasScoreDifference = numericHomeScore !== numericAwayScore;
-  const canCompleteMatch = hasScoreDifference && numericHomeScore >= 0 && numericAwayScore >= 0;
+  const canCompleteMatch =
+    hasScoreDifference && numericHomeScore >= 0 && numericAwayScore >= 0;
 
   async function refreshMatch(): Promise<void> {
     const data = await getMatch(matchId);
@@ -161,7 +186,7 @@ export default function MatchDetailsPage() {
     setIsUpdatingScore(true);
 
     try {
-      const updated = await updateMatchScore(
+      const updated = await submitMatchResult(
         matchId,
         {
           home_score: numericHomeScore,
@@ -172,7 +197,7 @@ export default function MatchDetailsPage() {
       );
 
       setMatch(updated);
-      setScoreSuccess("Score updated successfully");
+      setScoreSuccess("Result submitted for confirmation");
     } catch (error) {
       setScoreError(
         error instanceof Error ? error.message : "Failed to update score",
@@ -314,6 +339,57 @@ export default function MatchDetailsPage() {
     }
   }
 
+  async function handleConfirmProposedResult() {
+    const token = getAccessToken();
+    if (!token) {
+      setQuickActionError("You need to login before confirming a result");
+      return;
+    }
+
+    setQuickActionError("");
+    setQuickActionSuccess("");
+    setIsRunningQuickAction(true);
+
+    try {
+      const updated = await confirmMatchResult(matchId, token);
+      setMatch(updated);
+      setStatusValue(updated.status);
+      setQuickActionSuccess("Proposed result confirmed");
+      await refreshMatch();
+    } catch (error) {
+      setQuickActionError(
+        error instanceof Error ? error.message : "Failed to confirm result",
+      );
+    } finally {
+      setIsRunningQuickAction(false);
+    }
+  }
+
+  async function handleDisputeProposedResult() {
+    const token = getAccessToken();
+    if (!token) {
+      setQuickActionError("You need to login before disputing a result");
+      return;
+    }
+
+    setQuickActionError("");
+    setQuickActionSuccess("");
+    setIsRunningQuickAction(true);
+
+    try {
+      const updated = await disputeMatchResult(matchId, token);
+      setMatch(updated);
+      setStatusValue(updated.status);
+      setQuickActionSuccess("Proposed result disputed");
+    } catch (error) {
+      setQuickActionError(
+        error instanceof Error ? error.message : "Failed to dispute result",
+      );
+    } finally {
+      setIsRunningQuickAction(false);
+    }
+  }
+
   async function handleDeleteMatch() {
     const token = getAccessToken();
     if (!token) {
@@ -383,10 +459,10 @@ export default function MatchDetailsPage() {
 
       {!isLoading && match ? (
         <>
-          {!isLoadingCurrentUser && !isOwner ? (
+          {!isLoadingCurrentUser && !canManageResult ? (
             <Alert variant="info" title="Read-only mode">
-              You are not the owner of the tournament for this match, so edit
-              actions are hidden.
+              You are not the tournament owner or a team owner for this match,
+              so result actions are hidden.
             </Alert>
           ) : null}
 
@@ -414,6 +490,22 @@ export default function MatchDetailsPage() {
             <div className="card">
               <p className="muted">Scheduled at</p>
               <strong>{formatDate(match.scheduled_at)}</strong>
+            </div>
+
+            <div className="card">
+              <p className="muted">Proposed result</p>
+              <strong>
+                {match.proposed_home_score ?? "-"} :{" "}
+                {match.proposed_away_score ?? "-"}
+              </strong>
+              <p className="muted" style={{ marginTop: "8px" }}>
+                Winner: {match.proposed_winner_team?.name ?? "Not submitted"}
+              </p>
+            </div>
+
+            <div className="card">
+              <p className="muted">Submitted at</p>
+              <strong>{formatDate(match.result_submitted_at)}</strong>
             </div>
           </section>
 
@@ -453,10 +545,10 @@ export default function MatchDetailsPage() {
                 Use fast actions to move the match through its lifecycle.
               </p>
 
-              {!isOwner ? (
+              {!isOwner && !canReviewProposedResult ? (
                 <EmptyState
-                  title="Owner access required"
-                  description="Only the tournament owner can manage this match."
+                  title="Action access required"
+                  description="Only the tournament owner or the opposing team owner can manage this result."
                 />
               ) : (
                 <>
@@ -473,29 +565,54 @@ export default function MatchDetailsPage() {
                   ) : null}
 
                   <div className="row" style={{ flexWrap: "wrap", gap: "10px" }}>
-                    <button
-                      type="button"
-                      onClick={() => void handleQuickStatusChange("IN_PROGRESS")}
-                      disabled={isRunningQuickAction}
-                    >
-                      Start match
-                    </button>
+                    {isOwner ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void handleQuickStatusChange("IN_PROGRESS")}
+                          disabled={isRunningQuickAction}
+                        >
+                          Start match
+                        </button>
 
-                    <button
-                      type="button"
-                      onClick={() => void handleCompleteMatch()}
-                      disabled={isRunningQuickAction || !canCompleteMatch}
-                    >
-                      Complete match
-                    </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleCompleteMatch()}
+                          disabled={isRunningQuickAction || !canCompleteMatch}
+                        >
+                          Complete match
+                        </button>
 
-                    <button
-                      type="button"
-                      onClick={() => void handleQuickStatusChange("CANCELLED")}
-                      disabled={isRunningQuickAction}
-                    >
-                      Cancel match
-                    </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleQuickStatusChange("CANCELLED")}
+                          disabled={isRunningQuickAction}
+                        >
+                          Cancel match
+                        </button>
+                      </>
+                    ) : null}
+
+                    {canReviewProposedResult ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void handleConfirmProposedResult()}
+                          disabled={isRunningQuickAction}
+                        >
+                          Confirm proposed result
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => void handleDisputeProposedResult()}
+                          disabled={isRunningQuickAction}
+                        >
+                          Dispute proposed result
+                        </button>
+                      </>
+                    ) : null}
                   </div>
 
                   <p className="muted" style={{ marginTop: "14px" }}>
@@ -512,9 +629,9 @@ export default function MatchDetailsPage() {
             style={{ alignItems: "start", marginBottom: "24px" }}
           >
             <div className="card">
-              <h2>Update score</h2>
+              <h2>Submit result</h2>
 
-              {isOwner ? (
+              {canManageResult ? (
                 <form onSubmit={handleScoreSubmit}>
                   <div className="grid grid-2">
                     <div className="form-group">
@@ -567,15 +684,24 @@ export default function MatchDetailsPage() {
                   ) : null}
 
                   <div className="row" style={{ marginTop: "16px" }}>
-                    <button type="submit" disabled={isUpdatingScore}>
-                      {isUpdatingScore ? "Updating..." : "Save score"}
+                    <button
+                      type="submit"
+                      disabled={
+                        isUpdatingScore ||
+                        !canSubmitProposedResult ||
+                        !canCompleteMatch
+                      }
+                    >
+                      {isUpdatingScore
+                        ? "Submitting..."
+                        : "Submit for confirmation"}
                     </button>
                   </div>
                 </form>
               ) : (
                 <EmptyState
-                  title="Owner access required"
-                  description="Only the tournament owner can update the score."
+                  title="Participant access required"
+                  description="Only the tournament owner or a match team owner can submit a result."
                 />
               )}
             </div>
@@ -592,8 +718,15 @@ export default function MatchDetailsPage() {
                       value={statusValue}
                       onChange={(event) => setStatusValue(event.target.value)}
                     >
-                      {MATCH_STATUS_OPTIONS.map((option) => (
-                        <option key={option} value={option}>
+                        {MATCH_STATUS_OPTIONS.map((option) => (
+                        <option
+                          key={option}
+                          value={option}
+                          disabled={
+                            option === "PENDING_CONFIRMATION" ||
+                            option === "DISPUTED"
+                          }
+                        >
                           {option}
                         </option>
                       ))}

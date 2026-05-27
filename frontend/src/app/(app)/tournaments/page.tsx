@@ -80,6 +80,7 @@ function matchesScope(
 export default function TournamentsPage() {
   const authenticated = useMemo(() => isAuthenticated(), []);
   const { user: currentUser, isLoading: isLoadingCurrentUser } = useCurrentUser();
+  const currentUserId = currentUser?.id;
 
   const [tournaments, setTournaments] = useState<TournamentListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -100,14 +101,30 @@ export default function TournamentsPage() {
 
   const [search, setSearch] = useState("");
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("ALL");
-  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | TournamentStatus>("ALL");
+  const [disciplineFilter, setDisciplineFilter] = useState("");
+  const [formatFilter, setFormatFilter] = useState("ALL");
 
   const loadTournaments = useCallback(async () => {
+    if (scopeFilter === "MY_TOURNAMENTS" && !currentUserId) {
+      setTournaments([]);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setLoadError("");
       setIsLoading(true);
 
-      const data = await listTournaments();
+      const data = await listTournaments({
+        search: search.trim() || undefined,
+        scope: scopeFilter,
+        status: statusFilter === "ALL" ? undefined : statusFilter,
+        discipline: disciplineFilter.trim() || undefined,
+        format: formatFilter === "ALL" ? undefined : formatFilter,
+        ownerId:
+          scopeFilter === "MY_TOURNAMENTS" ? currentUserId : undefined,
+      });
       setTournaments(data);
     } catch (err) {
       setLoadError(
@@ -116,7 +133,14 @@ export default function TournamentsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [
+    currentUserId,
+    disciplineFilter,
+    formatFilter,
+    scopeFilter,
+    search,
+    statusFilter,
+  ]);
 
   useEffect(() => {
     void loadTournaments();
@@ -174,26 +198,7 @@ export default function TournamentsPage() {
       setStatus("DRAFT");
       setStartsAt("");
 
-      setTournaments((prev) =>
-        sortTournaments([
-          {
-            id: createdTournament.id,
-            name: createdTournament.name,
-            description: createdTournament.description,
-            format: createdTournament.format,
-            discipline: createdTournament.discipline,
-            rules: createdTournament.rules,
-            bracket_settings: createdTournament.bracket_settings,
-            status: createdTournament.status,
-            owner_id: createdTournament.owner_id,
-            max_teams: createdTournament.max_teams,
-            starts_at: createdTournament.starts_at,
-            created_at: createdTournament.created_at,
-            updated_at: createdTournament.updated_at,
-          },
-          ...prev,
-        ]),
-      );
+      await loadTournaments();
     } catch (err) {
       setCreateError(
         err instanceof Error ? err.message : "Failed to create tournament",
@@ -224,16 +229,36 @@ export default function TournamentsPage() {
         const matchesScopeFilter = matchesScope(
           tournament,
           scopeFilter,
-          currentUser?.id,
+          currentUserId,
         );
 
         const matchesStatusFilter =
           statusFilter === "ALL" || tournament.status === statusFilter;
+        const normalizedDiscipline = disciplineFilter.trim().toLowerCase();
+        const matchesDisciplineFilter =
+          !normalizedDiscipline ||
+          tournament.discipline.toLowerCase().includes(normalizedDiscipline);
+        const matchesFormatFilter =
+          formatFilter === "ALL" || tournament.format === formatFilter;
 
-        return matchesText && matchesScopeFilter && matchesStatusFilter;
+        return (
+          matchesText &&
+          matchesScopeFilter &&
+          matchesStatusFilter &&
+          matchesDisciplineFilter &&
+          matchesFormatFilter
+        );
       }),
     );
-  }, [tournaments, search, scopeFilter, statusFilter, currentUser]);
+  }, [
+    tournaments,
+    search,
+    scopeFilter,
+    statusFilter,
+    disciplineFilter,
+    formatFilter,
+    currentUserId,
+  ]);
 
   const openRegistrationCount = useMemo(
     () => tournaments.filter((item) => item.status === "REGISTRATION_OPEN").length,
@@ -528,7 +553,9 @@ export default function TournamentsPage() {
                   <select
                     id="tournament-status-filter"
                     value={statusFilter}
-                    onChange={(event) => setStatusFilter(event.target.value)}
+                    onChange={(event) =>
+                      setStatusFilter(event.target.value as "ALL" | TournamentStatus)
+                    }
                   >
                     <option value="ALL">All</option>
                     <option value="DRAFT">DRAFT</option>
@@ -540,6 +567,36 @@ export default function TournamentsPage() {
                   </select>
                 </div>
 
+                <div className="grid grid-2">
+                  <div className="form-group">
+                    <label htmlFor="tournament-discipline-filter">
+                      Discipline
+                    </label>
+                    <input
+                      id="tournament-discipline-filter"
+                      type="text"
+                      value={disciplineFilter}
+                      onChange={(event) => setDisciplineFilter(event.target.value)}
+                      placeholder="CS2, Dota 2, Valorant"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="tournament-format-filter">Format</label>
+                    <select
+                      id="tournament-format-filter"
+                      value={formatFilter}
+                      onChange={(event) => setFormatFilter(event.target.value)}
+                    >
+                      <option value="ALL">All formats</option>
+                      <option value="single_elimination">Single elimination</option>
+                      <option value="double_elimination">Double elimination</option>
+                      <option value="round_robin">Round robin</option>
+                      <option value="swiss">Swiss</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div className="row">
                   <button
                     type="button"
@@ -548,6 +605,8 @@ export default function TournamentsPage() {
                       setSearch("");
                       setScopeFilter("ALL");
                       setStatusFilter("ALL");
+                      setDisciplineFilter("");
+                      setFormatFilter("ALL");
                     }}
                   >
                     Reset filters

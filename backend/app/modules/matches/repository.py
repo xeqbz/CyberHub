@@ -18,6 +18,7 @@ class MatchRepository:
                 joinedload(Match.home_team),
                 joinedload(Match.away_team),
                 joinedload(Match.winner_team),
+                joinedload(Match.proposed_winner_team),
             )
         )
         return self.db.scalar(stmt)
@@ -30,6 +31,7 @@ class MatchRepository:
                 joinedload(Match.home_team),
                 joinedload(Match.away_team),
                 joinedload(Match.winner_team),
+                joinedload(Match.proposed_winner_team),
             )
             .order_by(Match.id)
             .offset(offset)
@@ -46,6 +48,7 @@ class MatchRepository:
                 joinedload(Match.home_team),
                 joinedload(Match.away_team),
                 joinedload(Match.winner_team),
+                joinedload(Match.proposed_winner_team),
             )
             .order_by(Match.id)
         )
@@ -133,6 +136,12 @@ class MatchRepository:
     def delete(self, match: Match) -> None:
         self.db.delete(match)
         self.db.commit()
+
+    def save(self, match: Match) -> Match:
+        self.db.add(match)
+        self.db.commit()
+        self.db.refresh(match)
+        return match
 
     def tournament_exists(self, tournament_id: int) -> bool:
         stmt = select(Tournament.id).where(Tournament.id == tournament_id)
