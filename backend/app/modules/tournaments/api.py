@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.auth.dependencies import get_current_active_user
+from app.modules.matches.repository import MatchRepository
+from app.modules.matches.schemas import MatchRead
 from app.modules.platform.service import create_notification, record_action
 from app.modules.teams.repository import TeamRepository
 from app.modules.tournaments.model import TournamentParticipantStatus
@@ -19,6 +21,8 @@ from app.modules.tournaments.schemas import (
 from app.modules.tournaments.service import (
     TournamentAccessDeniedError,
     TournamentAlreadyExistsError,
+    TournamentBracketAlreadyExistsError,
+    TournamentBracketNotReadyError,
     TournamentCapacityExceededError,
     TournamentLockedError,
     TournamentNotFoundError,
@@ -28,6 +32,7 @@ from app.modules.tournaments.service import (
     TournamentService,
     TournamentTeamAccessDeniedError,
     TournamentTeamNotFoundError,
+    TournamentUnsupportedFormatError,
 )
 from app.modules.users.model import User
 
@@ -37,7 +42,12 @@ router = APIRouter(prefix="/tournaments", tags=["tournaments"])
 def get_tournament_service(db: Session) -> TournamentService:
     tournament_repository = TournamentRepository(db)
     team_repository = TeamRepository(db)
-    return TournamentService(tournament_repository, team_repository)
+    match_repository = MatchRepository(db)
+    return TournamentService(
+        tournament_repository,
+        team_repository,
+        match_repository,
+    )
 
 
 @router.post(
@@ -205,6 +215,73 @@ def delete_tournament(
         ) from exc
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{tournament_id}/bracket/generate",
+    response_model=list[MatchRead],
+    status_code=status.HTTP_201_CREATED,
+)
+def generate_tournament_bracket(
+    tournament_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> list[MatchRead]:
+    service = get_tournament_service(db)
+
+    try:
+        matches = service.generate_bracket(
+            tournament_id=tournament_id,
+            acting_user_id=current_user.id,
+        )
+    except TournamentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tournament not found",
+        ) from exc
+    except TournamentAccessDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only tournament owner can perform this action",
+        ) from exc
+    except TournamentBracketAlreadyExistsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except (
+        TournamentBracketNotReadyError,
+        TournamentUnsupportedFormatError,
+    ) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    notified_owner_ids: set[int] = set()
+    for match in matches:
+        for team in (match.home_team, match.away_team):
+            if team.owner_id in notified_owner_ids:
+                continue
+            notified_owner_ids.add(team.owner_id)
+            create_notification(
+                db,
+                user_id=team.owner_id,
+                title="Tournament bracket generated",
+                message=f"Bracket for {match.tournament.name} is ready.",
+                related_entity_type="tournament",
+                related_entity_id=match.tournament_id,
+            )
+
+    record_action(
+        db,
+        actor_id=current_user.id,
+        action="tournament_bracket_generated",
+        entity_type="tournament",
+        entity_id=tournament_id,
+        details={"matches_created": len(matches)},
+    )
+    return matches
 
 
 @router.get(

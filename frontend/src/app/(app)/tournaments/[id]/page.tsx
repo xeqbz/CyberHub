@@ -15,6 +15,7 @@ import {
   type TeamRead,
 } from "@/src/shared/api/teams";
 import {
+  generateTournamentBracket,
   getTournament,
   registerTeamForTournament,
   removeTeamFromTournament,
@@ -47,19 +48,40 @@ function formatDate(value: string | null): string {
   return date.toLocaleString();
 }
 
-function sortMatches(matches: MatchRead[]): MatchRead[] {
-  return [...matches].sort((a, b) => {
-    if (a.scheduled_at && b.scheduled_at) {
-      return (
-        new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
-      );
-    }
+const STAGE_ORDER = [
+  "Upper bracket",
+  "Lower bracket",
+  "Grand final",
+  "Main bracket",
+  "Swiss",
+  "Round robin",
+];
 
-    if (a.scheduled_at && !b.scheduled_at) return -1;
-    if (!a.scheduled_at && b.scheduled_at) return 1;
+type BracketRoundGroup = {
+  roundNumber: number;
+  matches: MatchRead[];
+};
 
-    return b.id - a.id;
-  });
+type BracketStageGroup = {
+  stage: string;
+  rounds: BracketRoundGroup[];
+  matchesCount: number;
+  completedCount: number;
+};
+
+function getStageRank(stage: string): number {
+  const index = STAGE_ORDER.indexOf(stage);
+  return index === -1 ? STAGE_ORDER.length : index;
+}
+
+function formatRoundTitle(stage: string, roundNumber: number): string {
+  if (stage === "Grand final") return "Final match";
+  if (stage === "Swiss") return `Swiss round ${roundNumber}`;
+  return `Round ${roundNumber}`;
+}
+
+function formatScore(value: number | null): string {
+  return value === null ? "-" : String(value);
 }
 
 export default function TournamentDetailsPage() {
@@ -95,6 +117,9 @@ export default function TournamentDetailsPage() {
   const [createMatchError, setCreateMatchError] = useState("");
   const [createMatchSuccess, setCreateMatchSuccess] = useState("");
   const [isCreatingMatch, setIsCreatingMatch] = useState(false);
+  const [bracketError, setBracketError] = useState("");
+  const [bracketSuccess, setBracketSuccess] = useState("");
+  const [isGeneratingBracket, setIsGeneratingBracket] = useState(false);
 
   useEffect(() => {
     async function loadTournamentData() {
@@ -314,6 +339,31 @@ export default function TournamentDetailsPage() {
     }
   }
 
+  async function handleGenerateBracket() {
+    const token = getAccessToken();
+    if (!token) {
+      setBracketError("You need to login before generating the bracket");
+      return;
+    }
+
+    setBracketError("");
+    setBracketSuccess("");
+    setIsGeneratingBracket(true);
+
+    try {
+      const matches = await generateTournamentBracket(tournamentId, token);
+      setTournamentMatches(matches);
+      setBracketSuccess(`Bracket generated: ${matches.length} matches created.`);
+      await refreshTournamentData();
+    } catch (error) {
+      setBracketError(
+        error instanceof Error ? error.message : "Failed to generate bracket",
+      );
+    } finally {
+      setIsGeneratingBracket(false);
+    }
+  }
+
   const participantTeams = useMemo(() => {
     if (!tournament) return [];
     return tournament.participants
@@ -330,8 +380,44 @@ export default function TournamentDetailsPage() {
     return myTeams.filter((team) => !allParticipantTeamIds.has(team.id));
   }, [myTeams, allParticipantTeamIds]);
 
-  const sortedMatches = useMemo(() => {
-    return sortMatches(tournamentMatches);
+  const bracketStages = useMemo<BracketStageGroup[]>(() => {
+    const stageGroups = new Map<string, Map<number, MatchRead[]>>();
+
+    tournamentMatches.forEach((match) => {
+      const roundGroups = stageGroups.get(match.stage) ?? new Map();
+      const roundMatches = roundGroups.get(match.round_number) ?? [];
+
+      roundMatches.push(match);
+      roundGroups.set(match.round_number, roundMatches);
+      stageGroups.set(match.stage, roundGroups);
+    });
+
+    return Array.from(stageGroups.entries())
+      .map(([stage, roundGroups]) => {
+        const rounds = Array.from(roundGroups.entries())
+          .map(([roundNumber, matches]) => ({
+            roundNumber,
+            matches: [...matches].sort(
+              (a, b) => a.bracket_position - b.bracket_position,
+            ),
+          }))
+          .sort((a, b) => a.roundNumber - b.roundNumber);
+        const matches = rounds.flatMap((round) => round.matches);
+
+        return {
+          stage,
+          rounds,
+          matchesCount: matches.length,
+          completedCount: matches.filter(
+            (match) => match.status === "COMPLETED",
+          ).length,
+        };
+      })
+      .sort((a, b) => {
+        const stageRankDiff = getStageRank(a.stage) - getStageRank(b.stage);
+        if (stageRankDiff !== 0) return stageRankDiff;
+        return a.stage.localeCompare(b.stage);
+      });
   }, [tournamentMatches]);
 
   const completedMatchesCount = useMemo(() => {
@@ -354,6 +440,12 @@ export default function TournamentDetailsPage() {
     isOwner &&
     !isTournamentLocked &&
     participantTeams.length >= 2;
+  const canGenerateBracket =
+    isOwner &&
+    tournamentMatches.length === 0 &&
+    participantTeams.length >= 2 &&
+    (tournament?.status === "REGISTRATION_CLOSED" ||
+      tournament?.status === "IN_PROGRESS");
 
   return (
     <main className="page">
@@ -864,30 +956,64 @@ export default function TournamentDetailsPage() {
             </div>
 
             <div className="card">
-              <h2>Quick organizer notes</h2>
+              <h2>Bracket generation</h2>
 
               <div className="grid" style={{ gap: "12px", marginTop: "16px" }}>
                 <div className="card" style={{ padding: "16px" }}>
-                  <strong>1. Open registration</strong>
+                  <strong>1. Close registration</strong>
                   <p className="muted" style={{ marginTop: "8px" }}>
-                    Switch status to REGISTRATION_OPEN while teams are joining.
+                    Generate the initial bracket after applications are reviewed
+                    and registration is closed.
                   </p>
                 </div>
 
                 <div className="card" style={{ padding: "16px" }}>
-                  <strong>2. Close registration</strong>
+                  <strong>2. Create first matches</strong>
                   <p className="muted" style={{ marginTop: "8px" }}>
-                    Move to REGISTRATION_CLOSED when the participant pool is final.
+                    Single and double elimination create opening bracket matches.
+                    Round robin creates all pairings, while Swiss starts from the
+                    first round.
                   </p>
                 </div>
 
                 <div className="card" style={{ padding: "16px" }}>
-                  <strong>3. Start tournament</strong>
+                  <strong>3. Run the tournament</strong>
                   <p className="muted" style={{ marginTop: "8px" }}>
-                    Use IN_PROGRESS when matches begin and update match results as games end.
+                    Use IN_PROGRESS when matches begin. Completed playoff matches
+                    advance teams automatically, and Swiss creates the next round
+                    after current results.
                   </p>
                 </div>
               </div>
+
+              {bracketError ? (
+                <Alert variant="error" title="Bracket generation failed">
+                  {bracketError}
+                </Alert>
+              ) : null}
+
+              {bracketSuccess ? (
+                <Alert variant="success" title="Bracket generated">
+                  {bracketSuccess}
+                </Alert>
+              ) : null}
+
+              <div className="row" style={{ marginTop: "16px" }}>
+                <button
+                  type="button"
+                  onClick={() => void handleGenerateBracket()}
+                  disabled={!canGenerateBracket || isGeneratingBracket}
+                >
+                  {isGeneratingBracket ? "Generating..." : "Generate bracket"}
+                </button>
+              </div>
+
+              {!canGenerateBracket ? (
+                <p className="muted" style={{ marginTop: "12px" }}>
+                  Bracket generation is available to the owner after registration
+                  is closed and before matches exist.
+                </p>
+              ) : null}
             </div>
           </section>
 
@@ -899,7 +1025,8 @@ export default function TournamentDetailsPage() {
               <div>
                 <h2>Tournament matches</h2>
                 <p className="muted">
-                  Matches linked to this tournament, sorted by schedule.
+                  Matches linked to this tournament, grouped by bracket stage and
+                  round.
                 </p>
               </div>
 
@@ -908,59 +1035,108 @@ export default function TournamentDetailsPage() {
               </Link>
             </div>
 
-            {sortedMatches.length === 0 ? (
+            {tournamentMatches.length === 0 ? (
               <EmptyState
                 title="No matches yet"
-                description="Create the first match to start tournament play."
+                description="Generate a bracket or create the first match to start tournament play."
               />
             ) : (
-              <div className="grid" style={{ marginTop: "18px" }}>
-                {sortedMatches.map((match) => (
-                  <div key={match.id} className="card">
-                    <div
-                      className="row"
-                      style={{
-                        justifyContent: "space-between",
-                        alignItems: "flex-start",
-                        gap: "12px",
-                      }}
-                    >
+              <div className="bracket-stage-list">
+                {bracketStages.map((stage) => (
+                  <div key={stage.stage} className="bracket-stage">
+                    <div className="bracket-stage__header">
                       <div>
-                        <h3>
-                          Match #{match.id}: {match.home_team.name} vs {match.away_team.name}
-                        </h3>
+                        <h3>{stage.stage}</h3>
                         <p className="muted">
-                          Scheduled: {formatDate(match.scheduled_at)}
+                          {stage.completedCount} of {stage.matchesCount} matches
+                          completed
                         </p>
                       </div>
 
-                      <StatusBadge value={match.status} />
+                      <span className="badge">
+                        {stage.rounds.length}{" "}
+                        {stage.rounds.length === 1 ? "round" : "rounds"}
+                      </span>
                     </div>
 
-                    <div
-                      className="grid grid-2"
-                      style={{ marginTop: "16px", gap: "12px" }}
-                    >
-                      <div>
-                        <p className="muted">Score</p>
-                        <strong>
-                          {match.home_score ?? "-"} : {match.away_score ?? "-"}
-                        </strong>
-                      </div>
+                    <div className="bracket-round-grid">
+                      {stage.rounds.map((round) => (
+                        <div
+                          key={`${stage.stage}-${round.roundNumber}`}
+                          className="bracket-round"
+                        >
+                          <div className="bracket-round__header">
+                            <strong>
+                              {formatRoundTitle(stage.stage, round.roundNumber)}
+                            </strong>
+                            <span className="muted">
+                              {round.matches.length}{" "}
+                              {round.matches.length === 1 ? "match" : "matches"}
+                            </span>
+                          </div>
 
-                      <div>
-                        <p className="muted">Winner</p>
-                        <strong>{match.winner_team?.name ?? "Not decided"}</strong>
-                      </div>
-                    </div>
+                          <div className="bracket-round__matches">
+                            {round.matches.map((match) => {
+                              const homeWon =
+                                match.winner_team_id === match.home_team_id;
+                              const awayWon =
+                                match.winner_team_id === match.away_team_id;
 
-                    <div className="row" style={{ marginTop: "16px" }}>
-                      <Link
-                        href={`/matches/${match.id}`}
-                        className="btn btn-secondary"
-                      >
-                        Open match
-                      </Link>
+                              return (
+                                <div key={match.id} className="bracket-match">
+                                  <div className="bracket-match__header">
+                                    <div>
+                                      <strong>Match #{match.id}</strong>
+                                      <p className="muted">
+                                        Position {match.bracket_position}
+                                      </p>
+                                    </div>
+
+                                    <StatusBadge value={match.status} />
+                                  </div>
+
+                                  <div className="bracket-match__teams">
+                                    <div
+                                      className={`bracket-team-row${
+                                        homeWon ? " is-winner" : ""
+                                      }`}
+                                    >
+                                      <span>{match.home_team.name}</span>
+                                      <strong>{formatScore(match.home_score)}</strong>
+                                    </div>
+
+                                    <div
+                                      className={`bracket-team-row${
+                                        awayWon ? " is-winner" : ""
+                                      }`}
+                                    >
+                                      <span>{match.away_team.name}</span>
+                                      <strong>{formatScore(match.away_score)}</strong>
+                                    </div>
+                                  </div>
+
+                                  <div className="bracket-match__meta">
+                                    <p>
+                                      Winner:{" "}
+                                      <strong>
+                                        {match.winner_team?.name ?? "Not decided"}
+                                      </strong>
+                                    </p>
+                                    <p>Scheduled: {formatDate(match.scheduled_at)}</p>
+                                  </div>
+
+                                  <Link
+                                    href={`/matches/${match.id}`}
+                                    className="btn btn-secondary bracket-match__link"
+                                  >
+                                    Open match
+                                  </Link>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))}

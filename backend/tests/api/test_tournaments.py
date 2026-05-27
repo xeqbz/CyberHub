@@ -35,6 +35,7 @@ def create_tournament(
     access_token: str,
     name: str = "Cyber Cup",
     status: str = "DRAFT",
+    tournament_format: str = "single_elimination",
 ) -> dict:
     response = client.post(
         "/api/v1/tournaments",
@@ -42,6 +43,7 @@ def create_tournament(
             "name": name,
             "description": "Main tournament",
             "status": status,
+            "format": tournament_format,
             "max_teams": 8,
             "starts_at": None,
         },
@@ -49,6 +51,25 @@ def create_tournament(
     )
     assert response.status_code == 201
     return response.json()
+
+
+def create_registered_teams(
+    client,
+    access_token: str,
+    tournament_id: int,
+    count: int,
+) -> list[dict]:
+    teams = []
+    for index in range(count):
+        team = create_team(client, access_token, name=f"Cyber Wolves {index + 1}")
+        response = client.post(
+            f"/api/v1/tournaments/{tournament_id}/participants",
+            json={"team_id": team["id"]},
+            headers=auth_headers(access_token),
+        )
+        assert response.status_code == 201
+        teams.append(team)
+    return teams
 
 
 def test_create_tournament_requires_auth(client):
@@ -290,3 +311,242 @@ def test_can_remove_participant(client):
     list_response = client.get(f"/api/v1/tournaments/{tournament['id']}/participants")
     assert list_response.status_code == 200
     assert list_response.json() == []
+
+
+def test_owner_can_generate_single_elimination_bracket(client):
+    owner = register_user(client, "vadim", "vadim@example.com")
+    tournament = create_tournament(
+        client,
+        owner["access_token"],
+        name="Cyber Cup",
+        status="REGISTRATION_OPEN",
+    )
+    teams = create_registered_teams(
+        client,
+        owner["access_token"],
+        tournament["id"],
+        count=4,
+    )
+
+    status_response = client.patch(
+        f"/api/v1/tournaments/{tournament['id']}",
+        json={"status": "REGISTRATION_CLOSED"},
+        headers=auth_headers(owner["access_token"]),
+    )
+    assert status_response.status_code == 200
+
+    response = client.post(
+        f"/api/v1/tournaments/{tournament['id']}/bracket/generate",
+        headers=auth_headers(owner["access_token"]),
+    )
+
+    assert response.status_code == 201
+    matches = response.json()
+    assert len(matches) == 2
+    assert {match["stage"] for match in matches} == {"Main bracket"}
+    assert {match["round_number"] for match in matches} == {1}
+    assert [match["bracket_position"] for match in matches] == [1, 2]
+    assert {match["status"] for match in matches} == {"SCHEDULED"}
+
+    generated_team_ids = [
+        team_id
+        for match in matches
+        for team_id in (match["home_team_id"], match["away_team_id"])
+    ]
+    assert sorted(generated_team_ids) == sorted(team["id"] for team in teams)
+
+
+def test_generate_round_robin_bracket_creates_all_pairings(client):
+    owner = register_user(client, "vadim", "vadim@example.com")
+    tournament = create_tournament(
+        client,
+        owner["access_token"],
+        name="Cyber Round Robin",
+        status="REGISTRATION_OPEN",
+        tournament_format="round_robin",
+    )
+    teams = create_registered_teams(
+        client,
+        owner["access_token"],
+        tournament["id"],
+        count=3,
+    )
+
+    status_response = client.patch(
+        f"/api/v1/tournaments/{tournament['id']}",
+        json={"status": "REGISTRATION_CLOSED"},
+        headers=auth_headers(owner["access_token"]),
+    )
+    assert status_response.status_code == 200
+
+    response = client.post(
+        f"/api/v1/tournaments/{tournament['id']}/bracket/generate",
+        headers=auth_headers(owner["access_token"]),
+    )
+
+    assert response.status_code == 201
+    matches = response.json()
+    assert len(matches) == 3
+    assert {match["stage"] for match in matches} == {"Round robin"}
+
+    generated_pairs = {
+        tuple(sorted((match["home_team_id"], match["away_team_id"])))
+        for match in matches
+    }
+    expected_pairs = {
+        tuple(sorted((first["id"], second["id"])))
+        for index, first in enumerate(teams)
+        for second in teams[index + 1 :]
+    }
+    assert generated_pairs == expected_pairs
+    assert {match["round_number"] for match in matches} == {1, 2, 3}
+
+
+def test_generate_double_elimination_bracket_creates_upper_opening_round(client):
+    owner = register_user(client, "vadim", "vadim@example.com")
+    tournament = create_tournament(
+        client,
+        owner["access_token"],
+        name="Cyber Double",
+        status="REGISTRATION_OPEN",
+        tournament_format="double_elimination",
+    )
+    teams = create_registered_teams(
+        client,
+        owner["access_token"],
+        tournament["id"],
+        count=4,
+    )
+
+    status_response = client.patch(
+        f"/api/v1/tournaments/{tournament['id']}",
+        json={"status": "REGISTRATION_CLOSED"},
+        headers=auth_headers(owner["access_token"]),
+    )
+    assert status_response.status_code == 200
+
+    response = client.post(
+        f"/api/v1/tournaments/{tournament['id']}/bracket/generate",
+        headers=auth_headers(owner["access_token"]),
+    )
+
+    assert response.status_code == 201
+    matches = response.json()
+    assert len(matches) == 2
+    assert {match["stage"] for match in matches} == {"Upper bracket"}
+    assert {match["round_number"] for match in matches} == {1}
+
+    generated_team_ids = [
+        team_id
+        for match in matches
+        for team_id in (match["home_team_id"], match["away_team_id"])
+    ]
+    assert sorted(generated_team_ids) == sorted(team["id"] for team in teams)
+
+
+def test_generate_swiss_bracket_creates_first_round(client):
+    owner = register_user(client, "vadim", "vadim@example.com")
+    tournament = create_tournament(
+        client,
+        owner["access_token"],
+        name="Cyber Swiss",
+        status="REGISTRATION_OPEN",
+        tournament_format="swiss",
+    )
+    teams = create_registered_teams(
+        client,
+        owner["access_token"],
+        tournament["id"],
+        count=4,
+    )
+
+    status_response = client.patch(
+        f"/api/v1/tournaments/{tournament['id']}",
+        json={"status": "REGISTRATION_CLOSED"},
+        headers=auth_headers(owner["access_token"]),
+    )
+    assert status_response.status_code == 200
+
+    response = client.post(
+        f"/api/v1/tournaments/{tournament['id']}/bracket/generate",
+        headers=auth_headers(owner["access_token"]),
+    )
+
+    assert response.status_code == 201
+    matches = response.json()
+    assert len(matches) == 2
+    assert {match["stage"] for match in matches} == {"Swiss"}
+    assert {match["round_number"] for match in matches} == {1}
+
+    generated_team_ids = [
+        team_id
+        for match in matches
+        for team_id in (match["home_team_id"], match["away_team_id"])
+    ]
+    assert sorted(generated_team_ids) == sorted(team["id"] for team in teams)
+
+
+def test_cannot_generate_bracket_before_registration_is_closed(client):
+    owner = register_user(client, "vadim", "vadim@example.com")
+    tournament = create_tournament(
+        client,
+        owner["access_token"],
+        name="Cyber Cup",
+        status="REGISTRATION_OPEN",
+    )
+    create_registered_teams(
+        client,
+        owner["access_token"],
+        tournament["id"],
+        count=2,
+    )
+
+    response = client.post(
+        f"/api/v1/tournaments/{tournament['id']}/bracket/generate",
+        headers=auth_headers(owner["access_token"]),
+    )
+
+    assert response.status_code == 409
+    assert (
+        response.json()["detail"]
+        == "Close registration before generating the bracket"
+    )
+
+
+def test_cannot_generate_bracket_twice(client):
+    owner = register_user(client, "vadim", "vadim@example.com")
+    tournament = create_tournament(
+        client,
+        owner["access_token"],
+        name="Cyber Cup",
+        status="REGISTRATION_OPEN",
+    )
+    create_registered_teams(
+        client,
+        owner["access_token"],
+        tournament["id"],
+        count=2,
+    )
+
+    status_response = client.patch(
+        f"/api/v1/tournaments/{tournament['id']}",
+        json={"status": "REGISTRATION_CLOSED"},
+        headers=auth_headers(owner["access_token"]),
+    )
+    assert status_response.status_code == 200
+
+    first_response = client.post(
+        f"/api/v1/tournaments/{tournament['id']}/bracket/generate",
+        headers=auth_headers(owner["access_token"]),
+    )
+    second_response = client.post(
+        f"/api/v1/tournaments/{tournament['id']}/bracket/generate",
+        headers=auth_headers(owner["access_token"]),
+    )
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 409
+    assert (
+        second_response.json()["detail"]
+        == "Tournament already has generated or manually created matches"
+    )

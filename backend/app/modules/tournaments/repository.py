@@ -127,6 +127,17 @@ class TournamentRepository:
         self.db.delete(tournament)
         self.db.commit()
 
+    def update_bracket_settings(
+        self,
+        tournament: Tournament,
+        bracket_settings: dict | None,
+    ) -> Tournament:
+        tournament.bracket_settings = bracket_settings
+        self.db.add(tournament)
+        self.db.commit()
+        self.db.refresh(tournament)
+        return tournament
+
     def get_participant(
         self, tournament_id: int, team_id: int
     ) -> TournamentParticipant | None:

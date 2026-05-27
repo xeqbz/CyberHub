@@ -209,13 +209,34 @@ Frontend will be available at:
 http://localhost:3000
 ```
 
-By default, the frontend uses:
+By default, the frontend sends browser API requests to the same origin:
 
 ```text
-NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+NEXT_PUBLIC_API_URL=/api/v1
 ```
 
-If needed, override it through an environment variable.
+Next.js proxies `/api/v1/*` to the local backend. The proxy target defaults to:
+
+```text
+BACKEND_API_URL=http://127.0.0.1:8000
+```
+
+If your backend runs somewhere else, override `BACKEND_API_URL` when starting
+the frontend.
+
+### Temporary sharing through Cloudflare Tunnel
+
+After backend and frontend are running, expose only the frontend:
+
+```bash
+cloudflared tunnel --url http://localhost:3000
+```
+
+Open the generated `https://*.trycloudflare.com` URL. The frontend will call
+`/api/v1` on that same Cloudflare URL, and Next.js will proxy those requests
+back to the backend on your laptop. If you previously set
+`NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1`, unset it for tunnel sharing
+or set it to `/api/v1`.
 
 ### 3. Add demo data
 

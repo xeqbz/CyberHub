@@ -1,4 +1,5 @@
 import { apiRequest } from "@/src/shared/api/client";
+import type { MatchRead } from "@/src/shared/api/matches";
 import type { TeamListItem, UserSummary } from "@/src/shared/api/teams";
 
 export type TournamentStatus =
@@ -134,6 +135,19 @@ export async function reviewTournamentParticipant(
     {
       method: "PATCH",
       body: { status: participantStatus },
+      token,
+    },
+  );
+}
+
+export async function generateTournamentBracket(
+  tournamentId: number,
+  token: string,
+): Promise<MatchRead[]> {
+  return apiRequest<MatchRead[]>(
+    `/tournaments/${tournamentId}/bracket/generate`,
+    {
+      method: "POST",
       token,
     },
   );

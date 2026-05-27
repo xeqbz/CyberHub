@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { useCurrentUser } from "@/src/hooks/use-current-user";
 import { getAccessToken } from "@/src/shared/lib/auth";
 
 type ProtectedAppShellProps = {
@@ -15,24 +16,29 @@ export default function ProtectedAppShell({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { isLoading: isLoadingCurrentUser } = useCurrentUser();
+  const [hasHydrated, setHasHydrated] = useState(false);
 
-  const token = getAccessToken();
+  const token = hasHydrated ? getAccessToken() : null;
 
   useEffect(() => {
-    if (!token) {
-      const search = searchParams?.toString();
-      const fullPath = `${pathname}${search ? `?${search}` : ""}`;
-      const next =
-        fullPath && fullPath !== "/"
-          ? `?next=${encodeURIComponent(fullPath)}`
-          : "";
+    setHasHydrated(true);
+  }, []);
 
-      router.replace(`/login${next}`);
-      return;
-    }
-  }, [pathname, router, searchParams, token]);
+  useEffect(() => {
+    if (!hasHydrated || token) return;
 
-  if (!token) {
+    const search = searchParams?.toString();
+    const fullPath = `${pathname}${search ? `?${search}` : ""}`;
+    const next =
+      fullPath && fullPath !== "/"
+        ? `?next=${encodeURIComponent(fullPath)}`
+        : "";
+
+    router.replace(`/login${next}`);
+  }, [hasHydrated, pathname, router, searchParams, token]);
+
+  if (!hasHydrated || !token || isLoadingCurrentUser) {
     return (
       <main
         style={{

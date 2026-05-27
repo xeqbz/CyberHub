@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import UTC, datetime
 
 from app.modules.matches.model import Match, MatchStatus
@@ -6,6 +7,14 @@ from app.modules.matches.schemas import MatchCreate, MatchScoreUpdate, MatchUpda
 from app.modules.teams.repository import TeamRepository
 from app.modules.tournaments.model import Tournament, TournamentParticipantStatus
 from app.modules.tournaments.repository import TournamentRepository
+
+
+BRACKET_STATE_KEY = "_cyberhub_bracket"
+DOUBLE_UPPER_STAGE = "Upper bracket"
+DOUBLE_LOWER_STAGE = "Lower bracket"
+DOUBLE_GRAND_FINAL_STAGE = "Grand final"
+MAIN_BRACKET_STAGE = "Main bracket"
+SWISS_STAGE = "Swiss"
 
 
 class MatchError(Exception):
@@ -111,6 +120,7 @@ class MatchService:
         match = self.get_match_or_raise(match_id)
         tournament = self._get_tournament_or_raise(match.tournament_id)
         self._ensure_tournament_owner_access(tournament, acting_user_id)
+        was_completed = match.status == MatchStatus.COMPLETED
 
         winner_team_id = (
             match.winner_team_id if data.winner_team_id is None else data.winner_team_id
@@ -167,6 +177,9 @@ class MatchService:
             completed_at_was_provided=completed_at_was_provided,
         )
 
+        if status == MatchStatus.COMPLETED and not was_completed:
+            self._advance_bracket_after_completion(updated_match, tournament)
+
         return self.get_match_or_raise(updated_match.id)
 
     def update_match_score(
@@ -178,6 +191,7 @@ class MatchService:
         match = self.get_match_or_raise(match_id)
         tournament = self._get_tournament_or_raise(match.tournament_id)
         self._ensure_tournament_owner_access(tournament, acting_user_id)
+        was_completed = match.status == MatchStatus.COMPLETED
 
         winner_team_id = self._resolve_winner_team_id(
             home_team_id=match.home_team_id,
@@ -197,6 +211,9 @@ class MatchService:
             completed_at=datetime.now(UTC),
             completed_at_was_provided=True,
         )
+
+        if not was_completed:
+            self._advance_bracket_after_completion(updated_match, tournament)
 
         return self.get_match_or_raise(updated_match.id)
 
@@ -285,3 +302,293 @@ class MatchService:
             )
 
         return winner_team_id
+
+    def _advance_bracket_after_completion(
+        self,
+        match: Match,
+        tournament: Tournament,
+    ) -> None:
+        state = self._get_bracket_state(tournament)
+        if not state:
+            return
+
+        if state.get("format") == "swiss" and match.stage == SWISS_STAGE:
+            self._advance_swiss_if_round_complete(tournament, state)
+            self._save_bracket_state(tournament, state)
+            return
+
+        if match.winner_team_id is None:
+            return
+
+        advancement = state.get("advancements", {}).get(str(match.id))
+        if not advancement:
+            return
+
+        winner_target = advancement.get("winner")
+        if winner_target is not None:
+            self._advance_team_to_target(
+                tournament,
+                state,
+                winner_target,
+                match.winner_team_id,
+            )
+
+        loser_target = advancement.get("loser")
+        loser_team_id = self._get_loser_team_id(match)
+        if loser_target is not None and loser_team_id is not None:
+            self._advance_team_to_target(
+                tournament,
+                state,
+                loser_target,
+                loser_team_id,
+            )
+
+        self._save_bracket_state(tournament, state)
+
+    @staticmethod
+    def _get_loser_team_id(match: Match) -> int | None:
+        if match.winner_team_id == match.home_team_id:
+            return match.away_team_id
+        if match.winner_team_id == match.away_team_id:
+            return match.home_team_id
+        return None
+
+    @staticmethod
+    def _get_bracket_state(tournament: Tournament) -> dict | None:
+        settings = tournament.bracket_settings or {}
+        state = settings.get(BRACKET_STATE_KEY)
+        return deepcopy(state) if isinstance(state, dict) else None
+
+    def _save_bracket_state(self, tournament: Tournament, state: dict) -> None:
+        settings = dict(tournament.bracket_settings or {})
+        settings[BRACKET_STATE_KEY] = state
+        self.tournament_repository.update_bracket_settings(tournament, settings)
+
+    def _advance_team_to_target(
+        self,
+        tournament: Tournament,
+        state: dict,
+        target: dict,
+        team_id: int,
+    ) -> None:
+        key = self._target_key(target)
+        slots = state.setdefault("slots", {})
+        slot_data = slots.setdefault(key, {})
+        slot_name = target["slot"]
+
+        existing_team_id = slot_data.get(slot_name)
+        if existing_team_id is not None:
+            return
+
+        slot_data[slot_name] = team_id
+        home_team_id = slot_data.get("home")
+        away_team_id = slot_data.get("away")
+        created_targets = state.setdefault("created_targets", {})
+
+        if not home_team_id or not away_team_id or key in created_targets:
+            return
+
+        created_match = self.repository.create(
+            tournament_id=tournament.id,
+            home_team_id=home_team_id,
+            away_team_id=away_team_id,
+            status=MatchStatus.SCHEDULED,
+            scheduled_at=None,
+            stage=target["stage"],
+            round_number=int(target["round_number"]),
+            bracket_position=int(target["bracket_position"]),
+        )
+        created_targets[key] = created_match.id
+        self._register_created_match_advancement(state, created_match)
+
+    @staticmethod
+    def _target_key(target: dict) -> str:
+        return (
+            f"{target['stage']}|{target['round_number']}|"
+            f"{target['bracket_position']}"
+        )
+
+    def _register_created_match_advancement(self, state: dict, match: Match) -> None:
+        tournament_format = state.get("format")
+        advancement: dict[str, dict | None] = {"winner": None, "loser": None}
+
+        if tournament_format == "single_elimination":
+            advancement["winner"] = self._single_winner_target(
+                match,
+                int(state.get("rounds", 1)),
+            )
+        elif tournament_format == "double_elimination":
+            advancement["winner"] = self._double_winner_target(
+                match,
+                int(state.get("rounds", 1)),
+                int(state.get("lower_rounds", 1)),
+            )
+            advancement["loser"] = self._double_loser_target(
+                match,
+                int(state.get("rounds", 1)),
+            )
+
+        state.setdefault("advancements", {})[str(match.id)] = advancement
+
+    @staticmethod
+    def _single_winner_target(match: Match, rounds: int) -> dict | None:
+        if match.round_number >= rounds:
+            return None
+
+        return {
+            "stage": MAIN_BRACKET_STAGE,
+            "round_number": match.round_number + 1,
+            "bracket_position": (match.bracket_position + 1) // 2,
+            "slot": "home" if match.bracket_position % 2 == 1 else "away",
+        }
+
+    @staticmethod
+    def _double_winner_target(
+        match: Match,
+        upper_rounds: int,
+        lower_rounds: int,
+    ) -> dict | None:
+        if match.stage == DOUBLE_UPPER_STAGE:
+            if match.round_number < upper_rounds:
+                return {
+                    "stage": DOUBLE_UPPER_STAGE,
+                    "round_number": match.round_number + 1,
+                    "bracket_position": (match.bracket_position + 1) // 2,
+                    "slot": "home" if match.bracket_position % 2 == 1 else "away",
+                }
+
+            return {
+                "stage": DOUBLE_GRAND_FINAL_STAGE,
+                "round_number": 1,
+                "bracket_position": 1,
+                "slot": "home",
+            }
+
+        if match.stage == DOUBLE_LOWER_STAGE:
+            if match.round_number >= lower_rounds:
+                return {
+                    "stage": DOUBLE_GRAND_FINAL_STAGE,
+                    "round_number": 1,
+                    "bracket_position": 1,
+                    "slot": "away",
+                }
+
+            if match.round_number % 2 == 1:
+                return {
+                    "stage": DOUBLE_LOWER_STAGE,
+                    "round_number": match.round_number + 1,
+                    "bracket_position": match.bracket_position,
+                    "slot": "home",
+                }
+
+            return {
+                "stage": DOUBLE_LOWER_STAGE,
+                "round_number": match.round_number + 1,
+                "bracket_position": (match.bracket_position + 1) // 2,
+                "slot": "home" if match.bracket_position % 2 == 1 else "away",
+            }
+
+        return None
+
+    @staticmethod
+    def _double_loser_target(match: Match, upper_rounds: int) -> dict | None:
+        if match.stage != DOUBLE_UPPER_STAGE:
+            return None
+
+        if match.round_number == 1:
+            return {
+                "stage": DOUBLE_LOWER_STAGE,
+                "round_number": 1,
+                "bracket_position": (match.bracket_position + 1) // 2,
+                "slot": "home" if match.bracket_position % 2 == 1 else "away",
+            }
+
+        if match.round_number <= upper_rounds:
+            return {
+                "stage": DOUBLE_LOWER_STAGE,
+                "round_number": 2 * match.round_number - 2,
+                "bracket_position": match.bracket_position,
+                "slot": "away",
+            }
+
+        return None
+
+    def _advance_swiss_if_round_complete(
+        self,
+        tournament: Tournament,
+        state: dict,
+    ) -> None:
+        current_round = int(state.get("current_round", 1))
+        max_rounds = int(state.get("max_rounds", 1))
+        if current_round >= max_rounds:
+            return
+
+        matches = [
+            item
+            for item in self.repository.list_by_tournament(tournament.id)
+            if item.stage == SWISS_STAGE
+        ]
+        current_round_matches = [
+            item for item in matches if item.round_number == current_round
+        ]
+        if not current_round_matches or any(
+            item.status != MatchStatus.COMPLETED for item in current_round_matches
+        ):
+            return
+
+        next_round = current_round + 1
+        if any(item.round_number == next_round for item in matches):
+            state["current_round"] = next_round
+            return
+
+        standings = {team_id: 0 for team_id in state.get("team_ids", [])}
+        played_pairs: set[tuple[int, int]] = set()
+        for item in matches:
+            played_pairs.add(tuple(sorted((item.home_team_id, item.away_team_id))))
+            if item.status == MatchStatus.COMPLETED and item.winner_team_id is not None:
+                standings[item.winner_team_id] = standings.get(
+                    item.winner_team_id,
+                    0,
+                ) + 1
+
+        ordered_team_ids = sorted(
+            state.get("team_ids", []),
+            key=lambda team_id: (-standings.get(team_id, 0), team_id),
+        )
+        pairs = self._build_swiss_pairs(ordered_team_ids, played_pairs)
+        for position, (home_team_id, away_team_id) in enumerate(pairs, start=1):
+            self.repository.create(
+                tournament_id=tournament.id,
+                home_team_id=home_team_id,
+                away_team_id=away_team_id,
+                status=MatchStatus.SCHEDULED,
+                scheduled_at=None,
+                stage=SWISS_STAGE,
+                round_number=next_round,
+                bracket_position=position,
+            )
+
+        state["current_round"] = next_round
+
+    @staticmethod
+    def _build_swiss_pairs(
+        ordered_team_ids: list[int],
+        played_pairs: set[tuple[int, int]],
+    ) -> list[tuple[int, int]]:
+        available = list(ordered_team_ids)
+        pairs: list[tuple[int, int]] = []
+
+        while len(available) >= 2:
+            home_team_id = available.pop(0)
+            opponent_index = 0
+
+            for index, candidate_team_id in enumerate(available):
+                pair = tuple(sorted((home_team_id, candidate_team_id)))
+                if pair not in played_pairs:
+                    opponent_index = index
+                    break
+
+            away_team_id = available.pop(opponent_index)
+            pairs.append((home_team_id, away_team_id))
+
+        return pairs
