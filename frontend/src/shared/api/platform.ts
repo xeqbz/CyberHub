@@ -74,10 +74,21 @@ export type NotificationSnapshot = {
   notifications: NotificationRead[];
 };
 
+export type PlatformSnapshot = OverviewStats & {
+  latest_match_id: number | null;
+  latest_tournament_id: number | null;
+  latest_ranked_match_id: number | null;
+};
+
 export type PlatformRealtimeEvent =
   | {
       type: "notifications.snapshot";
       payload: NotificationSnapshot;
+      created_at: string;
+    }
+  | {
+      type: "platform.snapshot";
+      payload: PlatformSnapshot;
       created_at: string;
     }
   | {
@@ -88,6 +99,8 @@ export type PlatformRealtimeEvent =
 
 export type RankedMatch = {
   id: number;
+  discipline: string;
+  mode: string;
   player_one_id: number;
   player_two_id: number;
   status: "SCHEDULED" | "COMPLETED" | "CANCELLED";
@@ -113,10 +126,15 @@ export type RankedMatch = {
 export type MatchmakingResponse = {
   status: "SEARCHING" | "MATCHED" | "CANCELLED";
   message: string;
+  discipline: string | null;
+  mode: string | null;
+  rating_range: number | null;
   request: {
     id: number;
     user_id: number;
     status: "SEARCHING" | "MATCHED" | "CANCELLED";
+    discipline: string;
+    mode: string;
     rating_snapshot: number;
     matched_ranked_match_id: number | null;
     created_at: string;
@@ -153,6 +171,34 @@ export type ActionLog = {
   created_at: string;
   updated_at: string;
   actor: CurrentUser | null;
+};
+
+export type ProfileHistory = {
+  teams: Array<{
+    id: number;
+    name: string;
+    role: string;
+    created_at: string;
+  }>;
+  tournaments: Array<{
+    id: number;
+    name: string;
+    status: string;
+    participant_status: string;
+    team_name: string;
+    starts_at: string | null;
+  }>;
+  tournament_matches: Array<{
+    id: number;
+    tournament_id: number;
+    tournament_name: string;
+    home_team_name: string;
+    away_team_name: string;
+    status: string;
+    scheduled_at: string | null;
+    completed_at: string | null;
+  }>;
+  ranked_matches: RankedMatch[];
 };
 
 export type AdminUserUpdatePayload = {
@@ -231,10 +277,12 @@ export async function markNotificationRead(
 }
 
 export async function findRankedOpponent(
+  payload: { discipline: string; mode: string },
   token: string,
 ): Promise<MatchmakingResponse> {
   return apiRequest<MatchmakingResponse>("/ranked/matchmaking", {
     method: "POST",
+    body: payload,
     token,
   });
 }
@@ -248,6 +296,10 @@ export async function cancelRankedMatchmaking(token: string): Promise<void> {
 
 export async function listRankedMatches(token: string): Promise<RankedMatch[]> {
   return apiRequest<RankedMatch[]>("/ranked/matches", { token });
+}
+
+export async function getProfileHistory(token: string): Promise<ProfileHistory> {
+  return apiRequest<ProfileHistory>("/profile/history", { token });
 }
 
 export async function submitRankedMatchResult(

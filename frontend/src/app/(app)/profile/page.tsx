@@ -5,6 +5,10 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { useCurrentUser } from "@/src/hooks/use-current-user";
+import {
+  getProfileHistory,
+  type ProfileHistory,
+} from "@/src/shared/api/platform";
 import { updateCurrentUser } from "@/src/shared/api/users";
 import { clearTokens, getAccessToken } from "@/src/shared/lib/auth";
 
@@ -20,6 +24,10 @@ function formatDate(value: string): string {
   }
 
   return date.toLocaleString();
+}
+
+function formatOptionalDate(value: string | null): string {
+  return value ? formatDate(value) : "Not specified";
 }
 
 export default function ProfilePage() {
@@ -38,6 +46,8 @@ export default function ProfilePage() {
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [history, setHistory] = useState<ProfileHistory | null>(null);
+  const [historyError, setHistoryError] = useState("");
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -50,6 +60,24 @@ export default function ProfilePage() {
 
     setUsername(user.username);
     setEmail(user.email);
+  }, [user]);
+
+  useEffect(() => {
+    async function loadHistory() {
+      const token = getAccessToken();
+      if (!token || !user) return;
+
+      try {
+        setHistoryError("");
+        setHistory(await getProfileHistory(token));
+      } catch (error) {
+        setHistoryError(
+          error instanceof Error ? error.message : "Failed to load profile history",
+        );
+      }
+    }
+
+    void loadHistory();
   }, [user]);
 
   const initials = useMemo(() => {
@@ -358,6 +386,130 @@ export default function ProfilePage() {
                 <strong>Back to home</strong>
               </Link>
             </div>
+          </section>
+
+          <section style={{ marginTop: "24px" }}>
+            <h2>Participation history</h2>
+
+            {historyError ? (
+              <Alert variant="error" title="History unavailable">
+                {historyError}
+              </Alert>
+            ) : null}
+
+            {!history && !historyError ? <p>Loading history...</p> : null}
+
+            {history ? (
+              <div className="grid grid-2" style={{ marginTop: "16px" }}>
+                <div>
+                  <h3>Teams</h3>
+                  {history.teams.length === 0 ? (
+                    <p className="muted">No team memberships yet.</p>
+                  ) : (
+                    <div className="grid" style={{ marginTop: "12px" }}>
+                      {history.teams.map((team) => (
+                        <Link key={team.id} href={`/teams/${team.id}`} className="card">
+                          <strong>{team.name}</strong>
+                          <p className="muted">
+                            {team.role} · joined {formatDate(team.created_at)}
+                          </p>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <h3>Tournaments</h3>
+                  {history.tournaments.length === 0 ? (
+                    <p className="muted">No tournament applications yet.</p>
+                  ) : (
+                    <div className="grid" style={{ marginTop: "12px" }}>
+                      {history.tournaments.map((tournament) => (
+                        <Link
+                          key={`${tournament.id}-${tournament.team_name}`}
+                          href={`/tournaments/${tournament.id}`}
+                          className="card"
+                        >
+                          <div
+                            className="row"
+                            style={{ justifyContent: "space-between" }}
+                          >
+                            <strong>{tournament.name}</strong>
+                            <StatusBadge value={tournament.participant_status} />
+                          </div>
+                          <p className="muted">
+                            {tournament.team_name} · {tournament.status} ·{" "}
+                            {formatOptionalDate(tournament.starts_at)}
+                          </p>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <h3>Tournament matches</h3>
+                  {history.tournament_matches.length === 0 ? (
+                    <p className="muted">No tournament matches yet.</p>
+                  ) : (
+                    <div className="grid" style={{ marginTop: "12px" }}>
+                      {history.tournament_matches.map((match) => (
+                        <Link
+                          key={match.id}
+                          href={`/matches/${match.id}`}
+                          className="card"
+                        >
+                          <div
+                            className="row"
+                            style={{ justifyContent: "space-between" }}
+                          >
+                            <strong>
+                              {match.home_team_name} vs {match.away_team_name}
+                            </strong>
+                            <StatusBadge value={match.status} />
+                          </div>
+                          <p className="muted">
+                            {match.tournament_name} ·{" "}
+                            {formatOptionalDate(
+                              match.completed_at ?? match.scheduled_at,
+                            )}
+                          </p>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <h3>Ranked matches</h3>
+                  {history.ranked_matches.length === 0 ? (
+                    <p className="muted">No ranked matches yet.</p>
+                  ) : (
+                    <div className="grid" style={{ marginTop: "12px" }}>
+                      {history.ranked_matches.map((match) => (
+                        <div key={match.id} className="card">
+                          <div
+                            className="row"
+                            style={{ justifyContent: "space-between" }}
+                          >
+                            <strong>
+                              {match.player_one.username} vs{" "}
+                              {match.player_two.username}
+                            </strong>
+                            <StatusBadge value={match.status} />
+                          </div>
+                          <p className="muted">
+                            {match.discipline} · {match.mode} ·{" "}
+                            {formatOptionalDate(match.completed_at)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </section>
         </>
       ) : null}

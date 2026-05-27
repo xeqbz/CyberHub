@@ -48,6 +48,8 @@ function getDefaultFormState(): RankedMatchFormState {
 export default function RankedPage() {
   const [matches, setMatches] = useState<RankedMatch[]>([]);
   const [scores, setScores] = useState<Record<number, RankedMatchFormState>>({});
+  const [discipline, setDiscipline] = useState("CS2");
+  const [mode, setMode] = useState("1v1");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -87,8 +89,22 @@ export default function RankedPage() {
       setError("");
       setMessage("");
       setIsSearching(true);
-      const response = await findRankedOpponent(token);
-      setMessage(response.message);
+      const response = await findRankedOpponent(
+        {
+          discipline: discipline.trim() || "CS2",
+          mode: mode.trim() || "1v1",
+        },
+        token,
+      );
+      const rangeText =
+        response.rating_range !== null
+          ? ` Rating range: ±${response.rating_range}.`
+          : "";
+      setMessage(
+        `${response.message} (${response.discipline ?? discipline} ${
+          response.mode ?? mode
+        }).${rangeText}`,
+      );
       await loadMatches();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start matchmaking");
@@ -158,6 +174,31 @@ export default function RankedPage() {
         <h1>Ranked matchmaking</h1>
         <p>Find an opponent, submit the result and update ELO automatically.</p>
 
+        <div className="grid grid-2" style={{ marginTop: "16px", maxWidth: "560px" }}>
+          <div className="form-group">
+            <label htmlFor="ranked-discipline">Discipline</label>
+            <input
+              id="ranked-discipline"
+              type="text"
+              value={discipline}
+              onChange={(event) => setDiscipline(event.target.value)}
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="ranked-mode">Mode</label>
+            <select
+              id="ranked-mode"
+              value={mode}
+              onChange={(event) => setMode(event.target.value)}
+            >
+              <option value="1v1">1v1</option>
+              <option value="2v2">2v2</option>
+              <option value="5v5">5v5</option>
+            </select>
+          </div>
+        </div>
+
         <div className="row" style={{ marginTop: "16px", flexWrap: "wrap" }}>
           <button type="button" onClick={handleFindOpponent} disabled={isSearching}>
             {isSearching ? "Searching..." : "Find opponent"}
@@ -214,6 +255,9 @@ export default function RankedPage() {
                       <h3>
                         {match.player_one.username} vs {match.player_two.username}
                       </h3>
+                      <p className="muted">
+                        {match.discipline} · {match.mode}
+                      </p>
                     </div>
                     <StatusBadge value={match.status} />
                   </div>

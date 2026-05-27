@@ -7,7 +7,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.modules.auth.security import get_subject_from_token
-from app.modules.platform.model import Notification
+from app.modules.matches.model import Match, MatchStatus
+from app.modules.platform.model import (
+    DisputeStatus,
+    MatchDispute,
+    Notification,
+    RankedMatch,
+)
+from app.modules.teams.model import Team
+from app.modules.tournaments.model import Tournament
 from app.modules.users.model import User
 
 NOTIFICATION_POLL_INTERVAL_SECONDS = 3
@@ -83,6 +91,29 @@ def build_notification_snapshot(db: Session, user_id: int) -> dict[str, Any]:
     }
 
 
+def build_platform_snapshot(db: Session) -> dict[str, Any]:
+    return {
+        "users": db.scalar(select(func.count(User.id))) or 0,
+        "teams": db.scalar(select(func.count(Team.id))) or 0,
+        "tournaments": db.scalar(select(func.count(Tournament.id))) or 0,
+        "tournament_matches": db.scalar(select(func.count(Match.id))) or 0,
+        "ranked_matches": db.scalar(select(func.count(RankedMatch.id))) or 0,
+        "open_disputes": db.scalar(
+            select(func.count(MatchDispute.id)).where(
+                MatchDispute.status == DisputeStatus.OPEN
+            )
+        )
+        or 0,
+        "completed_matches": db.scalar(
+            select(func.count(Match.id)).where(Match.status == MatchStatus.COMPLETED)
+        )
+        or 0,
+        "latest_match_id": db.scalar(select(func.max(Match.id))),
+        "latest_tournament_id": db.scalar(select(func.max(Tournament.id))),
+        "latest_ranked_match_id": db.scalar(select(func.max(RankedMatch.id))),
+    }
+
+
 def make_realtime_event(event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "type": event_type,
@@ -99,6 +130,10 @@ def _snapshot_signature(snapshot: dict[str, Any]) -> tuple[int, int, int | None]
     )
 
 
+def _platform_signature(snapshot: dict[str, Any]) -> tuple[Any, ...]:
+    return tuple(snapshot.values())
+
+
 async def stream_notifications(websocket: WebSocket, db: Session) -> None:
     user = _authenticate_websocket_user(db, websocket.query_params.get("token"))
     if user is None:
@@ -107,6 +142,7 @@ async def stream_notifications(websocket: WebSocket, db: Session) -> None:
 
     await websocket.accept()
     last_signature: tuple[int, int, int | None] | None = None
+    last_platform_signature: tuple[Any, ...] | None = None
 
     try:
         while True:
@@ -118,6 +154,14 @@ async def stream_notifications(websocket: WebSocket, db: Session) -> None:
                     make_realtime_event("notifications.snapshot", snapshot)
                 )
                 last_signature = signature
+
+            platform_snapshot = build_platform_snapshot(db)
+            platform_signature = _platform_signature(platform_snapshot)
+            if platform_signature != last_platform_signature:
+                await websocket.send_json(
+                    make_realtime_event("platform.snapshot", platform_snapshot)
+                )
+                last_platform_signature = platform_signature
 
             try:
                 message = await asyncio.wait_for(

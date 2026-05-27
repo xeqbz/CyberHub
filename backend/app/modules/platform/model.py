@@ -103,6 +103,18 @@ class MatchDispute(BaseModel):
 class RankedMatch(BaseModel):
     __tablename__ = "ranked_matches"
 
+    discipline: Mapped[str] = mapped_column(
+        String(120),
+        default="CS2",
+        nullable=False,
+        index=True,
+    )
+    mode: Mapped[str] = mapped_column(
+        String(40),
+        default="1v1",
+        nullable=False,
+        index=True,
+    )
     player_one_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
@@ -174,6 +186,18 @@ class MatchmakingRequest(BaseModel):
         SqlEnum(MatchmakingRequestStatus, name="matchmaking_request_status"),
         nullable=False,
         default=MatchmakingRequestStatus.SEARCHING,
+        index=True,
+    )
+    discipline: Mapped[str] = mapped_column(
+        String(120),
+        default="CS2",
+        nullable=False,
+        index=True,
+    )
+    mode: Mapped[str] = mapped_column(
+        String(40),
+        default="1v1",
+        nullable=False,
         index=True,
     )
     rating_snapshot: Mapped[int] = mapped_column(Integer, nullable=False)

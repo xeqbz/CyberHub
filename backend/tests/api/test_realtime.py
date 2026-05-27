@@ -49,6 +49,21 @@ def test_notifications_websocket_sends_current_snapshot(
     assert event["payload"]["notifications"][0]["title"] == "Live update"
 
 
+def test_notifications_websocket_sends_platform_snapshot(client):
+    user = register_user(client, "alpha", "alpha@example.com")
+
+    with TestClient(app) as live_client:
+        with live_client.websocket_connect(
+            f"/ws/notifications?token={user['access_token']}"
+        ) as websocket:
+            websocket.receive_json()
+            event = websocket.receive_json()
+
+    assert event["type"] == "platform.snapshot"
+    assert event["payload"]["users"] >= 1
+    assert "latest_match_id" in event["payload"]
+
+
 def test_expire_stale_matchmaking_requests_creates_notification_and_log(
     client,
     test_session_factory,

@@ -1,14 +1,23 @@
+import json
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from redis import Redis
+from redis.exceptions import RedisError
 
+from app.core.config import settings
 from app.modules.platform.model import (
     ActionLog,
     MatchmakingRequest,
     MatchmakingRequestStatus,
     Notification,
 )
+from app.modules.users.model import User
+
+
+DEFAULT_RANKINGS_CACHE_KEY = "cyberhub:rankings:default"
+DEFAULT_RANKINGS_CACHE_TTL_SECONDS = 60
 
 
 def record_action(
@@ -52,6 +61,76 @@ def create_notification(
     db.commit()
     db.refresh(notification)
     return notification
+
+
+def _get_redis_client() -> Redis:
+    return Redis.from_url(
+        settings.redis_dsn,
+        decode_responses=True,
+        socket_connect_timeout=0.1,
+        socket_timeout=0.1,
+    )
+
+
+def build_default_ranking_rows(db: Session, *, limit: int = 100) -> list[dict]:
+    users = list(
+        db.scalars(
+            select(User)
+            .where(User.is_active.is_(True))
+            .order_by(User.rating.desc(), User.wins.desc(), User.id)
+            .limit(limit)
+        ).all()
+    )
+    return [
+        {
+            "id": user.id,
+            "username": user.username,
+            "rating": user.rating,
+            "wins": user.wins,
+            "losses": user.losses,
+            "draws": user.draws,
+        }
+        for user in users
+    ]
+
+
+def get_cached_default_rankings() -> list[dict] | None:
+    try:
+        payload = _get_redis_client().get(DEFAULT_RANKINGS_CACHE_KEY)
+    except RedisError:
+        return None
+
+    if not payload:
+        return None
+
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError:
+        return None
+
+    return data if isinstance(data, list) else None
+
+
+def set_cached_default_rankings(
+    rows: list[dict],
+    *,
+    ttl_seconds: int = DEFAULT_RANKINGS_CACHE_TTL_SECONDS,
+) -> None:
+    try:
+        _get_redis_client().setex(
+            DEFAULT_RANKINGS_CACHE_KEY,
+            ttl_seconds,
+            json.dumps(rows),
+        )
+    except RedisError:
+        return
+
+
+def invalidate_cached_default_rankings() -> None:
+    try:
+        _get_redis_client().delete(DEFAULT_RANKINGS_CACHE_KEY)
+    except RedisError:
+        return
 
 
 def expire_stale_matchmaking_requests(

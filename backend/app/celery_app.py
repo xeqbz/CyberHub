@@ -21,6 +21,10 @@ celery_app.conf.update(
             "task": "platform.auto_confirm_stale_match_results",
             "schedule": 300.0,
             "args": (24,),
+        },
+        "refresh-rankings-cache": {
+            "task": "platform.refresh_rankings_cache",
+            "schedule": 60.0,
         }
     },
     result_serializer="json",

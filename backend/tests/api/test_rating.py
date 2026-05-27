@@ -1,5 +1,5 @@
 from app.modules.platform.api import _apply_elo
-from app.modules.platform.model import RankedMatch
+from app.modules.platform.model import MatchmakingRequest, RankedMatch
 from app.modules.users.model import User
 from tests.api.helpers import (
     auth_headers,
@@ -139,3 +139,77 @@ def test_rankings_reflect_updated_ratings(client):
     rankings = response.json()
     assert rankings[0]["username"] == "winner"
     assert rankings[0]["rating"] > rankings[1]["rating"]
+
+
+def test_matchmaking_respects_discipline_and_mode(client):
+    first = register_user(client, "alpha", "alpha@example.com")
+    second = register_user(client, "bravo", "bravo@example.com")
+    third = register_user(client, "charlie", "charlie@example.com")
+
+    first_response = client.post(
+        "/api/v1/ranked/matchmaking",
+        json={"discipline": "CS2", "mode": "1v1"},
+        headers=auth_headers(first["access_token"]),
+    )
+    second_response = client.post(
+        "/api/v1/ranked/matchmaking",
+        json={"discipline": "Dota 2", "mode": "1v1"},
+        headers=auth_headers(second["access_token"]),
+    )
+    third_response = client.post(
+        "/api/v1/ranked/matchmaking",
+        json={"discipline": "CS2", "mode": "1v1"},
+        headers=auth_headers(third["access_token"]),
+    )
+
+    assert first_response.status_code == 200
+    assert first_response.json()["status"] == "SEARCHING"
+    assert second_response.status_code == 200
+    assert second_response.json()["status"] == "SEARCHING"
+    assert third_response.status_code == 200
+    assert third_response.json()["status"] == "MATCHED"
+    assert third_response.json()["match"]["discipline"] == "CS2"
+    assert third_response.json()["match"]["mode"] == "1v1"
+
+
+def test_matchmaking_expands_rating_range_after_waiting(
+    client,
+    test_session_factory,
+):
+    from datetime import UTC, datetime, timedelta
+
+    first = register_user(client, "alpha", "alpha@example.com")
+    second = register_user(client, "bravo", "bravo@example.com")
+
+    first_response = client.post(
+        "/api/v1/ranked/matchmaking",
+        json={"discipline": "CS2", "mode": "1v1"},
+        headers=auth_headers(first["access_token"]),
+    )
+    assert first_response.status_code == 200
+    assert first_response.json()["status"] == "SEARCHING"
+
+    db = test_session_factory()
+    try:
+        first_profile = db.query(User).filter_by(username="alpha").one()
+        second_profile = db.query(User).filter_by(username="bravo").one()
+        first_profile.rating = 1000
+        second_profile.rating = 1600
+        request = db.query(MatchmakingRequest).filter_by(user_id=first_profile.id).one()
+        request.created_at = datetime.now(UTC) - timedelta(minutes=45)
+        db.add(first_profile)
+        db.add(second_profile)
+        db.add(request)
+        db.commit()
+    finally:
+        db.close()
+
+    second_response = client.post(
+        "/api/v1/ranked/matchmaking",
+        json={"discipline": "CS2", "mode": "1v1"},
+        headers=auth_headers(second["access_token"]),
+    )
+
+    assert second_response.status_code == 200
+    assert second_response.json()["status"] == "MATCHED"
+    assert second_response.json()["rating_range"] >= 600

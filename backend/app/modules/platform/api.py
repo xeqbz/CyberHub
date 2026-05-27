@@ -1,6 +1,6 @@
 import csv
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from io import StringIO
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -28,18 +28,30 @@ from app.modules.platform.schemas import (
     MatchDisputeCreate,
     MatchDisputeRead,
     MatchDisputeResolve,
+    MatchmakingRequestCreate,
     MatchmakingResponse,
     NotificationRead,
     OverviewStats,
     PlayerStats,
+    ProfileHistory,
+    ProfileMatchSummary,
+    ProfileTeamSummary,
+    ProfileTournamentSummary,
     RankedMatchRead,
     RankedMatchScoreUpdate,
     RankingUser,
     TeamStats,
     TournamentStats,
 )
-from app.modules.platform.service import create_notification, record_action
-from app.modules.teams.model import Team
+from app.modules.platform.service import (
+    build_default_ranking_rows,
+    create_notification,
+    get_cached_default_rankings,
+    invalidate_cached_default_rankings,
+    record_action,
+    set_cached_default_rankings,
+)
+from app.modules.teams.model import Team, TeamMember
 from app.modules.teams.repository import TeamRepository
 from app.modules.tournaments.model import (
     Tournament,
@@ -60,6 +72,11 @@ from app.modules.users.service import (
 router = APIRouter(tags=["platform"])
 admin_router = APIRouter(prefix="/admin", tags=["admin"])
 
+INITIAL_MATCHMAKING_RATING_RANGE = 150
+MATCHMAKING_RANGE_STEP = 75
+MATCHMAKING_RANGE_STEP_MINUTES = 5
+MAX_MATCHMAKING_RATING_RANGE = 750
+
 
 def _get_ranked_match(db: Session, match_id: int) -> RankedMatch | None:
     stmt = (
@@ -72,6 +89,64 @@ def _get_ranked_match(db: Session, match_id: int) -> RankedMatch | None:
         )
     )
     return db.scalar(stmt)
+
+
+def _normalize_matchmaking_label(value: str) -> str:
+    return value.strip()
+
+
+def _matchmaking_rating_range(
+    created_at: datetime,
+    *,
+    now: datetime | None = None,
+) -> int:
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=UTC)
+    current_time = now or datetime.now(UTC)
+    wait_time = max(current_time - created_at, timedelta())
+    steps = int(wait_time.total_seconds() // (MATCHMAKING_RANGE_STEP_MINUTES * 60))
+    return min(
+        INITIAL_MATCHMAKING_RATING_RANGE + steps * MATCHMAKING_RANGE_STEP,
+        MAX_MATCHMAKING_RATING_RANGE,
+    )
+
+
+def _find_matchmaking_opponent(
+    db: Session,
+    *,
+    current_user: User,
+    discipline: str,
+    mode: str,
+    own_request_created_at: datetime,
+) -> tuple[MatchmakingRequest | None, int]:
+    now = datetime.now(UTC)
+    own_range = _matchmaking_rating_range(own_request_created_at, now=now)
+    candidates = list(
+        db.scalars(
+            select(MatchmakingRequest)
+            .join(User, MatchmakingRequest.user_id == User.id)
+            .where(
+                MatchmakingRequest.user_id != current_user.id,
+                MatchmakingRequest.status == MatchmakingRequestStatus.SEARCHING,
+                MatchmakingRequest.discipline == discipline,
+                MatchmakingRequest.mode == mode,
+                User.is_active.is_(True),
+            )
+            .order_by(
+                func.abs(MatchmakingRequest.rating_snapshot - current_user.rating),
+                MatchmakingRequest.created_at,
+            )
+        ).all()
+    )
+
+    for candidate in candidates:
+        candidate_range = _matchmaking_rating_range(candidate.created_at, now=now)
+        allowed_range = max(own_range, candidate_range)
+        rating_gap = abs(candidate.rating_snapshot - current_user.rating)
+        if rating_gap <= allowed_range:
+            return candidate, allowed_range
+
+    return None, own_range
 
 
 def _stat_value(value: int | None) -> int:
@@ -174,7 +249,19 @@ def list_rankings(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=100),
     db: Session = Depends(get_db),
-) -> list[User]:
+) -> list[User] | list[dict]:
+    default_cacheable_request = (
+        not search
+        and sort_by == "rating"
+        and min_matches == 0
+        and offset == 0
+        and limit == 100
+    )
+    if default_cacheable_request:
+        cached_rankings = get_cached_default_rankings()
+        if cached_rankings is not None:
+            return cached_rankings
+
     stmt = select(User).where(User.is_active.is_(True))
     matches_played = User.wins + User.losses + User.draws
 
@@ -194,7 +281,13 @@ def list_rankings(
 
     stmt = stmt.offset(offset)
     stmt = stmt.limit(limit)
-    return list(db.scalars(stmt).all())
+    users = list(db.scalars(stmt).all())
+    if default_cacheable_request:
+        rows = build_default_ranking_rows(db, limit=limit)
+        set_cached_default_rankings(rows)
+        return rows
+
+    return users
 
 
 @router.get(
@@ -381,6 +474,118 @@ def list_tournament_statistics(db: Session = Depends(get_db)) -> list[Tournament
 
 
 @router.get(
+    "/profile/history",
+    response_model=ProfileHistory,
+    status_code=status.HTTP_200_OK,
+)
+def get_profile_history(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> ProfileHistory:
+    memberships = list(
+        db.scalars(
+            select(TeamMember)
+            .where(TeamMember.user_id == current_user.id)
+            .options(joinedload(TeamMember.team))
+            .order_by(TeamMember.created_at.desc())
+            .limit(20)
+        ).all()
+    )
+    team_ids = [membership.team_id for membership in memberships]
+
+    tournament_participants: list[TournamentParticipant] = []
+    tournament_matches: list[Match] = []
+    if team_ids:
+        tournament_participants = list(
+            db.scalars(
+                select(TournamentParticipant)
+                .where(TournamentParticipant.team_id.in_(team_ids))
+                .options(
+                    joinedload(TournamentParticipant.tournament),
+                    joinedload(TournamentParticipant.team),
+                )
+                .order_by(TournamentParticipant.created_at.desc())
+                .limit(20)
+            ).unique().all()
+        )
+        tournament_matches = list(
+            db.scalars(
+                select(Match)
+                .where(
+                    or_(
+                        Match.home_team_id.in_(team_ids),
+                        Match.away_team_id.in_(team_ids),
+                    )
+                )
+                .options(
+                    joinedload(Match.tournament),
+                    joinedload(Match.home_team),
+                    joinedload(Match.away_team),
+                    joinedload(Match.winner_team),
+                )
+                .order_by(Match.created_at.desc())
+                .limit(10)
+            ).unique().all()
+        )
+
+    ranked_matches = list(
+        db.scalars(
+            select(RankedMatch)
+            .where(
+                or_(
+                    RankedMatch.player_one_id == current_user.id,
+                    RankedMatch.player_two_id == current_user.id,
+                )
+            )
+            .options(
+                joinedload(RankedMatch.player_one),
+                joinedload(RankedMatch.player_two),
+                joinedload(RankedMatch.winner),
+            )
+            .order_by(RankedMatch.created_at.desc())
+            .limit(10)
+        ).unique().all()
+    )
+
+    return ProfileHistory(
+        teams=[
+            ProfileTeamSummary(
+                id=membership.team.id,
+                name=membership.team.name,
+                role=membership.role.value,
+                created_at=membership.created_at,
+            )
+            for membership in memberships
+        ],
+        tournaments=[
+            ProfileTournamentSummary(
+                id=participant.tournament.id,
+                name=participant.tournament.name,
+                status=participant.tournament.status.value,
+                participant_status=participant.status.value,
+                team_name=participant.team.name,
+                starts_at=participant.tournament.starts_at,
+            )
+            for participant in tournament_participants
+        ],
+        tournament_matches=[
+            ProfileMatchSummary(
+                id=match.id,
+                tournament_id=match.tournament_id,
+                tournament_name=match.tournament.name,
+                home_team_name=match.home_team.name,
+                away_team_name=match.away_team.name,
+                status=match.status.value,
+                scheduled_at=match.scheduled_at,
+                completed_at=match.completed_at,
+            )
+            for match in tournament_matches
+        ],
+        ranked_matches=ranked_matches,
+    )
+
+
+@router.get(
     "/notifications",
     response_model=list[NotificationRead],
     status_code=status.HTTP_200_OK,
@@ -428,9 +633,14 @@ def mark_notification_read(
     status_code=status.HTTP_200_OK,
 )
 def find_ranked_opponent(
+    payload: MatchmakingRequestCreate | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> MatchmakingResponse:
+    search_payload = payload or MatchmakingRequestCreate()
+    discipline = _normalize_matchmaking_label(search_payload.discipline)
+    mode = _normalize_matchmaking_label(search_payload.mode)
+
     active_match = db.scalar(
         select(RankedMatch)
         .where(
@@ -452,6 +662,8 @@ def find_ranked_opponent(
             status=MatchmakingRequestStatus.MATCHED,
             message="You already have an active ranked match",
             match=active_match,
+            discipline=active_match.discipline,
+            mode=active_match.mode,
         )
 
     own_request = db.scalar(
@@ -463,29 +675,38 @@ def find_ranked_opponent(
         .order_by(MatchmakingRequest.id.desc())
     )
     if own_request is not None:
-        return MatchmakingResponse(
-            status=MatchmakingRequestStatus.SEARCHING,
-            message="Opponent search is already active",
-            request=own_request,
+        discipline = own_request.discipline
+        mode = own_request.mode
+        opponent_request, rating_range = _find_matchmaking_opponent(
+            db,
+            current_user=current_user,
+            discipline=discipline,
+            mode=mode,
+            own_request_created_at=own_request.created_at,
+        )
+        if opponent_request is None:
+            return MatchmakingResponse(
+                status=MatchmakingRequestStatus.SEARCHING,
+                message="Opponent search is already active",
+                request=own_request,
+                discipline=discipline,
+                mode=mode,
+                rating_range=rating_range,
+            )
+    else:
+        opponent_request, rating_range = _find_matchmaking_opponent(
+            db,
+            current_user=current_user,
+            discipline=discipline,
+            mode=mode,
+            own_request_created_at=datetime.now(UTC),
         )
 
-    opponent_request = db.scalar(
-        select(MatchmakingRequest)
-        .join(User, MatchmakingRequest.user_id == User.id)
-        .where(
-            MatchmakingRequest.user_id != current_user.id,
-            MatchmakingRequest.status == MatchmakingRequestStatus.SEARCHING,
-            User.is_active.is_(True),
-        )
-        .order_by(
-            func.abs(MatchmakingRequest.rating_snapshot - current_user.rating),
-            MatchmakingRequest.created_at,
-        )
-    )
-
-    if opponent_request is None:
+    if opponent_request is None and own_request is None:
         request = MatchmakingRequest(
             user_id=current_user.id,
+            discipline=discipline,
+            mode=mode,
             rating_snapshot=current_user.rating,
         )
         db.add(request)
@@ -497,15 +718,31 @@ def find_ranked_opponent(
             action="ranked_matchmaking_started",
             entity_type="matchmaking_request",
             entity_id=request.id,
-            details={"rating": current_user.rating},
+            details={
+                "rating": current_user.rating,
+                "discipline": discipline,
+                "mode": mode,
+                "rating_range": rating_range,
+            },
         )
         return MatchmakingResponse(
             status=MatchmakingRequestStatus.SEARCHING,
             message="Searching for an opponent",
             request=request,
+            discipline=discipline,
+            mode=mode,
+            rating_range=rating_range,
+        )
+
+    if opponent_request is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to resolve matchmaking state",
         )
 
     ranked_match = RankedMatch(
+        discipline=discipline,
+        mode=mode,
         player_one_id=opponent_request.user_id,
         player_two_id=current_user.id,
     )
@@ -514,12 +751,19 @@ def find_ranked_opponent(
 
     opponent_request.status = MatchmakingRequestStatus.MATCHED
     opponent_request.matched_ranked_match_id = ranked_match.id
-    current_request = MatchmakingRequest(
-        user_id=current_user.id,
-        status=MatchmakingRequestStatus.MATCHED,
-        rating_snapshot=current_user.rating,
-        matched_ranked_match_id=ranked_match.id,
-    )
+    if own_request is None:
+        current_request = MatchmakingRequest(
+            user_id=current_user.id,
+            status=MatchmakingRequestStatus.MATCHED,
+            discipline=discipline,
+            mode=mode,
+            rating_snapshot=current_user.rating,
+            matched_ranked_match_id=ranked_match.id,
+        )
+    else:
+        current_request = own_request
+        current_request.status = MatchmakingRequestStatus.MATCHED
+        current_request.matched_ranked_match_id = ranked_match.id
     db.add(current_request)
     db.commit()
 
@@ -535,7 +779,9 @@ def find_ranked_opponent(
             db,
             user_id=user_id,
             title="Ranked match found",
-            message=f"Ranked match #{match.id} is ready.",
+            message=(
+                f"{match.discipline} {match.mode} ranked match #{match.id} is ready."
+            ),
             related_entity_type="ranked_match",
             related_entity_id=match.id,
         )
@@ -549,6 +795,9 @@ def find_ranked_opponent(
         details={
             "player_one_id": match.player_one_id,
             "player_two_id": match.player_two_id,
+            "discipline": match.discipline,
+            "mode": match.mode,
+            "rating_range": rating_range,
         },
     )
 
@@ -556,6 +805,9 @@ def find_ranked_opponent(
         status=MatchmakingRequestStatus.MATCHED,
         message="Opponent found",
         match=match,
+        discipline=match.discipline,
+        mode=match.mode,
+        rating_range=rating_range,
     )
 
 
@@ -668,6 +920,7 @@ def submit_ranked_match_result(
     db.add(match.player_one)
     db.add(match.player_two)
     db.commit()
+    invalidate_cached_default_rankings()
 
     for user_id in {match.player_one_id, match.player_two_id}:
         create_notification(
@@ -690,6 +943,8 @@ def submit_ranked_match_result(
             "player_two_score": payload.player_two_score,
             "player_one_kda": match.player_one_kda,
             "player_two_kda": match.player_two_kda,
+            "discipline": match.discipline,
+            "mode": match.mode,
             "winner_id": match.winner_id,
         },
     )

@@ -8,9 +8,11 @@ from app.modules.matches.model import Match, MatchStatus
 from app.modules.matches.repository import MatchRepository
 from app.modules.matches.service import MatchResultNotPendingError, MatchService
 from app.modules.platform.service import (
+    build_default_ranking_rows,
     create_notification,
     expire_stale_matchmaking_requests,
     record_action,
+    set_cached_default_rankings,
 )
 from app.modules.teams.repository import TeamRepository
 from app.modules.tournaments.repository import TournamentRepository
@@ -24,6 +26,15 @@ def expire_stale_matchmaking_requests_task(max_age_minutes: int = 30) -> int:
             db,
             max_age_minutes=max_age_minutes,
         )
+
+
+@celery_app.task(name="platform.refresh_rankings_cache")
+def refresh_rankings_cache_task() -> int:
+    # Diploma demo: Redis keeps the default leaderboard warm for the frontend.
+    with SessionLocal() as db:
+        rows = build_default_ranking_rows(db)
+        set_cached_default_rankings(rows)
+        return len(rows)
 
 
 @celery_app.task(name="platform.auto_confirm_stale_match_results")
