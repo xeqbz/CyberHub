@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.db.session import get_db
 from app.modules.auth.dependencies import get_current_active_user, require_roles
+from app.modules.auth.security import hash_password
 from app.modules.matches.model import Match, MatchStatus
 from app.modules.matches.repository import MatchRepository
 from app.modules.matches.service import MatchResultNotPendingError, MatchService
@@ -76,6 +77,9 @@ INITIAL_MATCHMAKING_RATING_RANGE = 150
 MATCHMAKING_RANGE_STEP = 75
 MATCHMAKING_RANGE_STEP_MINUTES = 5
 MAX_MATCHMAKING_RATING_RANGE = 750
+DEMO_MATCHMAKING_PASSWORD = "demo12345"
+DEMO_MATCHMAKING_EMAIL_DOMAIN = "cyberhub-demo.com"
+LEGACY_DEMO_MATCHMAKING_EMAIL_DOMAIN = "ranked-demo.cyberhub.local"
 
 
 def _get_ranked_match(db: Session, match_id: int) -> RankedMatch | None:
@@ -93,6 +97,69 @@ def _get_ranked_match(db: Session, match_id: int) -> RankedMatch | None:
 
 def _normalize_matchmaking_label(value: str) -> str:
     return value.strip()
+
+
+def _demo_matchmaking_email(username: str) -> str:
+    return f"{username}@{DEMO_MATCHMAKING_EMAIL_DOMAIN}"
+
+
+def _repair_legacy_demo_email(db: Session, user: User) -> bool:
+    if not user.email.endswith(f"@{LEGACY_DEMO_MATCHMAKING_EMAIL_DOMAIN}"):
+        return False
+
+    user.email = _demo_matchmaking_email(user.username)
+    db.add(user)
+    db.flush()
+    return True
+
+
+def _repair_legacy_demo_match_emails(db: Session, match: RankedMatch) -> bool:
+    player_one_repaired = _repair_legacy_demo_email(db, match.player_one)
+    player_two_repaired = _repair_legacy_demo_email(db, match.player_two)
+    return player_one_repaired or player_two_repaired
+
+
+def _get_or_create_demo_ranked_opponent(
+    db: Session,
+    *,
+    username: str,
+    current_user: User,
+) -> User:
+    if username == current_user.username:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Demo opponent cannot be the current user",
+        )
+
+    opponent = db.scalar(select(User).where(User.username == username))
+    if opponent is None:
+        opponent = User(
+            username=username,
+            email=_demo_matchmaking_email(username),
+            hashed_password=hash_password(DEMO_MATCHMAKING_PASSWORD),
+            is_active=True,
+            role=UserRole.USER,
+            rating=current_user.rating,
+        )
+        db.add(opponent)
+        db.flush()
+        return opponent
+
+    if opponent.id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Demo opponent cannot be the current user",
+        )
+
+    email_repaired = _repair_legacy_demo_email(db, opponent)
+    if not opponent.is_active:
+        opponent.is_active = True
+        db.add(opponent)
+        db.flush()
+    elif email_repaired:
+        db.flush()
+
+    return opponent
 
 
 def _matchmaking_rating_range(
@@ -147,6 +214,93 @@ def _find_matchmaking_opponent(
             return candidate, allowed_range
 
     return None, own_range
+
+
+def _create_demo_ranked_match(
+    db: Session,
+    *,
+    current_user: User,
+    demo_opponent_username: str,
+    discipline: str,
+    mode: str,
+    own_request: MatchmakingRequest | None,
+) -> tuple[RankedMatch, MatchmakingRequest]:
+    opponent = _get_or_create_demo_ranked_opponent(
+        db,
+        username=demo_opponent_username,
+        current_user=current_user,
+    )
+    ranked_match = RankedMatch(
+        discipline=discipline,
+        mode=mode,
+        player_one_id=current_user.id,
+        player_two_id=opponent.id,
+    )
+    db.add(ranked_match)
+    db.flush()
+
+    if own_request is None:
+        current_request = MatchmakingRequest(
+            user_id=current_user.id,
+            discipline=discipline,
+            mode=mode,
+            rating_snapshot=current_user.rating,
+        )
+    else:
+        current_request = own_request
+        current_request.discipline = discipline
+        current_request.mode = mode
+        current_request.rating_snapshot = current_user.rating
+
+    current_request.status = MatchmakingRequestStatus.MATCHED
+    current_request.matched_ranked_match_id = ranked_match.id
+    db.add(current_request)
+    db.add(
+        MatchmakingRequest(
+            user_id=opponent.id,
+            status=MatchmakingRequestStatus.MATCHED,
+            discipline=discipline,
+            mode=mode,
+            rating_snapshot=opponent.rating,
+            matched_ranked_match_id=ranked_match.id,
+        )
+    )
+    db.commit()
+
+    match = _get_ranked_match(db, ranked_match.id)
+    if match is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create ranked match",
+        )
+
+    for user_id in {match.player_one_id, match.player_two_id}:
+        create_notification(
+            db,
+            user_id=user_id,
+            title="Ranked match found",
+            message=(
+                f"{match.discipline} {match.mode} ranked match #{match.id} is ready."
+            ),
+            related_entity_type="ranked_match",
+            related_entity_id=match.id,
+        )
+
+    record_action(
+        db,
+        actor_id=current_user.id,
+        action="ranked_demo_match_created",
+        entity_type="ranked_match",
+        entity_id=match.id,
+        details={
+            "player_one_id": match.player_one_id,
+            "player_two_id": match.player_two_id,
+            "discipline": match.discipline,
+            "mode": match.mode,
+            "demo_opponent_username": demo_opponent_username,
+        },
+    )
+    return match, current_request
 
 
 def _stat_value(value: int | None) -> int:
@@ -640,6 +794,7 @@ def find_ranked_opponent(
     search_payload = payload or MatchmakingRequestCreate()
     discipline = _normalize_matchmaking_label(search_payload.discipline)
     mode = _normalize_matchmaking_label(search_payload.mode)
+    demo_opponent_username = search_payload.demo_opponent_username
 
     active_match = db.scalar(
         select(RankedMatch)
@@ -658,6 +813,9 @@ def find_ranked_opponent(
         .order_by(RankedMatch.id.desc())
     )
     if active_match is not None:
+        if _repair_legacy_demo_match_emails(db, active_match):
+            db.commit()
+
         return MatchmakingResponse(
             status=MatchmakingRequestStatus.MATCHED,
             message="You already have an active ranked match",
@@ -674,6 +832,25 @@ def find_ranked_opponent(
         )
         .order_by(MatchmakingRequest.id.desc())
     )
+    if demo_opponent_username:
+        match, current_request = _create_demo_ranked_match(
+            db,
+            current_user=current_user,
+            demo_opponent_username=demo_opponent_username,
+            discipline=discipline,
+            mode=mode,
+            own_request=own_request,
+        )
+        return MatchmakingResponse(
+            status=MatchmakingRequestStatus.MATCHED,
+            message="Opponent found",
+            request=current_request,
+            match=match,
+            discipline=match.discipline,
+            mode=match.mode,
+            rating_range=0,
+        )
+
     if own_request is not None:
         discipline = own_request.discipline
         mode = own_request.mode
@@ -866,7 +1043,14 @@ def list_my_ranked_matches(
         )
         .order_by(RankedMatch.created_at.desc())
     )
-    return list(db.scalars(stmt).unique().all())
+    matches = list(db.scalars(stmt).unique().all())
+    email_repaired = False
+    for match in matches:
+        email_repaired = _repair_legacy_demo_match_emails(db, match) or email_repaired
+
+    if email_repaired:
+        db.commit()
+    return matches
 
 
 @router.patch(
@@ -955,6 +1139,8 @@ def submit_ranked_match_result(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to refresh ranked match",
         )
+    if _repair_legacy_demo_match_emails(db, refreshed):
+        db.commit()
     return refreshed
 
 

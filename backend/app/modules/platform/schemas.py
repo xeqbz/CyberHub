@@ -123,8 +123,13 @@ class MatchmakingRequestRead(BaseModel):
 class MatchmakingRequestCreate(BaseModel):
     discipline: str = Field(default="CS2", min_length=1, max_length=120)
     mode: str = Field(default="1v1", min_length=1, max_length=40)
+    demo_opponent_username: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=50,
+    )
 
-    @field_validator("discipline", "mode", mode="before")
+    @field_validator("discipline", "mode", "demo_opponent_username", mode="before")
     @classmethod
     def normalize_label(cls, value: object) -> object:
         if isinstance(value, str):

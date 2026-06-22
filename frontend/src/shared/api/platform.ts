@@ -276,8 +276,14 @@ export async function markNotificationRead(
   );
 }
 
+export type FindRankedOpponentPayload = {
+  discipline: string;
+  mode: string;
+  demo_opponent_username?: string;
+};
+
 export async function findRankedOpponent(
-  payload: { discipline: string; mode: string },
+  payload: FindRankedOpponentPayload,
   token: string,
 ): Promise<MatchmakingResponse> {
   return apiRequest<MatchmakingResponse>("/ranked/matchmaking", {

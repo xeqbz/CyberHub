@@ -172,6 +172,30 @@ def test_matchmaking_respects_discipline_and_mode(client):
     assert third_response.json()["match"]["mode"] == "1v1"
 
 
+def test_demo_matchmaking_creates_su1sside_opponent(client):
+    user = register_user(client, "alpha", "alpha@example.com")
+
+    response = client.post(
+        "/api/v1/ranked/matchmaking",
+        json={
+            "discipline": "CS2",
+            "mode": "1v1",
+            "demo_opponent_username": "su1sside",
+        },
+        headers=auth_headers(user["access_token"]),
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "MATCHED"
+    assert data["message"] == "Opponent found"
+    assert data["match"]["status"] == "SCHEDULED"
+    assert data["match"]["player_one"]["username"] == "alpha"
+    assert data["match"]["player_two"]["username"] == "su1sside"
+    assert data["match"]["player_two"]["email"] == "su1sside@cyberhub-demo.com"
+    assert data["request"]["status"] == "MATCHED"
+
+
 def test_matchmaking_expands_rating_range_after_waiting(
     client,
     test_session_factory,
