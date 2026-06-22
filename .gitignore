@@ -1,0 +1,11 @@
+backend/.venv
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+backend/image.png
+.pytest_cache/
+.ruff_cache
+.codex
+celerybeat-schedule
+backend/celerybeat-schedule
